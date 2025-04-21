@@ -1,0 +1,46 @@
+### model
+model_name_or_path: meta-llama/Llama-3.2-3B
+trust_remote_code: true # May be needed depending on model specifics
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z3_config.json # ZeRO-3 for full fine-tuning
+
+### dataset
+dataset_dir: data
+dataset: opc_edu,opc_evol,opc_mceval,opc_pkg # List all desired subsets
+template: llama3        # Template for Llama-3 models
+cutoff_len: 2048        # Increased length for code
+max_samples: null       # Use full dataset unless testing
+overwrite_cache: true
+preprocessing_num_workers: 16
+# dataloader_num_workers: 4 # Optional: adjust based on system
+
+### output
+output_dir: saves/Llama-3.2-3B/full/opc-sft-stage2 # Specific output directory
+logging_steps: 10
+save_steps: 500 # Adjust based on dataset size and desired frequency
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false # Keep optimizer state etc. for potential resume
+report_to: wandb # Or wandb, mlflow, swanlab
+
+### train
+per_device_train_batch_size: 4 # Usually 1 for full FT of models this size unless you have A100s/H100s
+gradient_accumulation_steps: 16 # Adjust target effective batch size (1 * 64 * num_gpus)
+learning_rate: 1.0e-5 # Lower LR typical for full fine-tuning
+num_train_epochs: 2.0 # Adjust based on dataset size and convergence
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true # Use bf16 if supported (Ampere+)
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+
+## eval
+val_size: 0.1 # Adjusted validation split size for large dataset
+per_device_eval_batch_size: 8 # Adjust based on GPU memory
+eval_strategy: steps # Evaluate during training
+eval_steps: 100 # Adjusted frequency of evaluation 

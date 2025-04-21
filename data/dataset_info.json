@@ -2,6 +2,13 @@
   "identity": {
     "file_name": "identity.json"
   },
+  "Open-R1-Math": {
+    "hf_hub_url": "open-r1/OpenR1-Math-220k",
+    "columns": {
+      "prompt": "problem",
+      "response": "solution"
+    }
+  },
   "alpaca_en_demo": {
     "file_name": "alpaca_en_demo.json"
   },
@@ -694,5 +701,45 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "opc_edu": {
+    "hf_hub_url": "OpenCoder-LLM/opc-sft-stage2",
+    "subset": "educational_instruct",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    },
+    "tags": { "task_category": "code_generation" }
+  },
+  "opc_evol": {
+    "hf_hub_url": "OpenCoder-LLM/opc-sft-stage2",
+    "subset": "evol_instruct",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    },
+    "tags": { "task_category": "code_generation" }
+  },
+  "opc_mceval": {
+    "hf_hub_url": "OpenCoder-LLM/opc-sft-stage2",
+    "subset": "mceval_instruct",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    },
+    "tags": { "task_category": "code_generation" }
+  },
+  "opc_pkg": {
+    "hf_hub_url": "OpenCoder-LLM/opc-sft-stage2",
+    "subset": "package_instruct",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    },
+    "tags": { "task_category": "code_generation" }
   }
 }
