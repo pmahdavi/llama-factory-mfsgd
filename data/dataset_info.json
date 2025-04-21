@@ -534,6 +534,16 @@
       "rejected": "rejected"
     }
   },
+  "coig_p": {
+    "hf_hub_url": "m-a-p/COIG-P",
+    "ranking": true,
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
+  },
   "rlhf_v": {
     "hf_hub_url": "llamafactory/RLHF-V",
     "ranking": true,
@@ -629,7 +639,7 @@
     }
   },
   "c4_demo": {
-    "file_name": "c4_demo.json",
+    "file_name": "c4_demo.jsonl",
     "columns": {
       "prompt": "text"
     }
