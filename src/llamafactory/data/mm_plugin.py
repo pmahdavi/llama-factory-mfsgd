@@ -21,7 +21,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Literal, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, BinaryIO, Literal, Optional, TypedDict, Union
 
 import numpy as np
 import torch
@@ -84,20 +84,6 @@ if TYPE_CHECKING:
 
         def _get_number_of_features(self, orig_height: int, orig_width: int, height: int, width: int) -> int:
             pass
-
-
-def _concatenate_list(input_list: list[Any]) -> Union[list[Any], "NDArray", "torch.Tensor"]:
-    r"""Concatenate a list of lists, numpy arrays or torch tensors.
-
-    Returns:
-        a list of numpy arrays or torch tensors.
-    """
-    if isinstance(input_list[0], list):
-        return [item for sublist in input_list for item in sublist]
-    elif isinstance(input_list[0], np.ndarray):
-        return np.concatenate(input_list, axis=0)
-    elif isinstance(input_list[0], torch.Tensor):
-        return torch.cat(input_list, dim=0)
 
 
 def _get_paligemma_token_type_ids(imglens: list[int], seqlens: list[int], processor: "MMProcessor") -> list[list[int]]:
@@ -496,8 +482,15 @@ class InternVLPlugin(BasePlugin):
         **kwargs,
     ) -> dict[str, "torch.Tensor"]:
         image_processor: BaseImageProcessor = getattr(processor, "image_processor")
-        attributes = ["crop_to_patches", "min_patches", "max_patches"]  # need for image processor
-        image_kwargs = {attr: getattr(image_processor, attr, None) for attr in attributes}
+        image_processor_kwargs = {}
+        if getattr(processor, "crop_to_patches", False):
+            image_processor_kwargs.update(
+                {
+                    "crop_to_patches": True,
+                    "max_patches": 12,
+                    "min_patches": 1,
+                }
+            )
 
         mm_inputs = {}
         image_video_patches = []
@@ -520,7 +513,7 @@ class InternVLPlugin(BasePlugin):
 
         if len(images) != 0:
             images = make_flat_list_of_images(images)
-            image_inputs = image_processor(images=images, **image_kwargs)
+            image_inputs = image_processor(images=images, return_tensors="pt", **image_processor_kwargs)
             image_num_patches = image_inputs.pop("num_patches")
             image_pixel_values = image_inputs.pop("pixel_values")
             image_num_patches_indices = np.cumsum(image_num_patches)
@@ -529,8 +522,8 @@ class InternVLPlugin(BasePlugin):
             videos = make_batched_videos(videos)
             num_frames_per_video = [len(video) for video in videos]
             patch_indices = np.cumsum(num_frames_per_video)
-            image_kwargs["crop_to_patches"] = False
-            video_inputs = image_processor(images=videos, **image_kwargs)
+            image_processor_kwargs["crop_to_patches"] = False
+            video_inputs = image_processor(images=videos, return_tensors="pt", **image_processor_kwargs)
             video_num_patches = video_inputs.pop("num_patches")
             video_pixel_values = video_inputs.pop("pixel_values")
             video_num_patches_indices = np.cumsum(video_num_patches)
@@ -543,18 +536,16 @@ class InternVLPlugin(BasePlugin):
                 image_video_patches.append(image_pixel_values[start_index:end_index])
 
         if len(videos) != 0 and video_pixel_values is not None:
+            patch_indices_with_prefix = [0] + list(patch_indices)
             for i in range(len(videos)):
-                current_patch_index = patch_indices[i - 1] if i > 0 else 0
-                end_patch_index = patch_indices[i]
-                start_index = video_num_patches_indices[current_patch_index] if i > 0 else 0
+                current_patch_index = patch_indices_with_prefix[i]
+                end_patch_index = patch_indices_with_prefix[i + 1]
+                start_index = video_num_patches_indices[current_patch_index - 1] if i > 0 else 0
                 end_index = video_num_patches_indices[end_patch_index - 1]
                 image_video_patches.append(video_pixel_values[start_index:end_index])
 
         if len(images) != 0 or len(videos) != 0:
-            pixel_values_list = _concatenate_list(image_video_patches)
-            mm_inputs["pixel_values"] = torch.stack(
-                [torch.tensor(patch_ndarray) for patch_ndarray in pixel_values_list]
-            )
+            mm_inputs["pixel_values"] = torch.cat(image_video_patches, dim=0)
 
         if len(images) != 0:
             mm_inputs.update({"image_num_patches": image_num_patches})
@@ -908,115 +899,6 @@ class LlavaNextVideoPlugin(BasePlugin):
 @dataclass
 class MiniCPMVPlugin(BasePlugin):
     @override
-    def process_messages(
-        self,
-        messages: list[dict[str, str]],
-        images: list["ImageInput"],
-        videos: list["VideoInput"],
-        audios: list["AudioInput"],
-        processor: Optional["MMProcessor"],
-    ) -> list[dict[str, str]]:
-        self._validate_input(processor, images, videos, audios)
-        num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
-        messages = deepcopy(messages)
-        image_processor: BaseImageProcessor = getattr(processor, "image_processor")
-        mm_inputs = {}
-        audio_inputs = {}
-        if len(images) != 0 and len(videos) != 0:
-            raise ValueError("MiniCPM-V model does not support input images and videos at the same time.")
-
-        if len(videos) != 0:
-            max_slice_nums = 2
-            use_image_id = False
-            mm_inputs = self._get_mm_inputs([], videos, [], processor)
-        else:
-            max_slice_nums = image_processor.max_slice_nums
-            use_image_id = image_processor.use_image_id
-
-        for i, message in enumerate(messages):
-            content = message["content"]
-            while IMAGE_PLACEHOLDER in content:
-                if num_image_tokens >= len(images):
-                    raise ValueError(f"`len(images)` is less than the number of {IMAGE_PLACEHOLDER} tokens.")
-
-                content = content.replace(IMAGE_PLACEHOLDER, "{{image}}", 1)
-                num_image_tokens += 1
-
-            while VIDEO_PLACEHOLDER in content:
-                if num_video_tokens >= len(videos):
-                    raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
-
-                video_seqlen = len(mm_inputs["pixel_values"][num_video_tokens]) if self.expand_mm_tokens else 1
-                content = content.replace(VIDEO_PLACEHOLDER, "{{image}}" * video_seqlen, 1)
-                num_video_tokens += 1
-
-            while AUDIO_PLACEHOLDER in content:
-                if num_audio_tokens >= len(audios):
-                    raise ValueError(f"`len(audios)` is less than the number of {AUDIO_PLACEHOLDER} tokens.")
-
-                content = content.replace(AUDIO_PLACEHOLDER, "{{audio}}", 1)
-                num_audio_tokens += 1
-
-            message["content"] = content.replace("{{image}}", "(<image>./</image>)").replace(
-                "{{audio}}", "(<audio>./</audio>)"
-            )
-
-        if num_image_tokens > 0:
-            mm_inputs = self._get_mm_inputs(images, [], [], processor)
-
-        if num_audio_tokens > 0:
-            audio_inputs = self._get_mm_inputs([], [], audios, processor, ret_phs=True)
-
-        if mm_inputs:
-            pattern = "(<image>./</image>)"
-            image_sizes = mm_inputs["image_sizes"]
-            idx = 0
-            for index, message in enumerate(messages):
-                text = message["content"]
-                image_tags = re.findall(pattern, text)
-                text_chunks = text.split(pattern)
-                final_text = ""
-                for i in range(len(image_tags)):
-                    final_text = (
-                        final_text
-                        + text_chunks[i]
-                        + image_processor.get_slice_image_placeholder(
-                            image_sizes[0][idx], idx, max_slice_nums, use_image_id
-                        )
-                    )
-                    idx += 1
-
-                final_text += text_chunks[-1]
-                messages[index]["content"] = final_text
-
-        if audio_inputs:
-            pattern = "(<audio>./</audio>)"
-            idx = 0
-            for index, message in enumerate(messages):
-                text = message["content"]
-                audio_tags = re.findall(pattern, text)
-                text_chunks = text.split(pattern)
-                final_text = ""
-                for i in range(len(audio_tags)):
-                    audio_placeholder = audio_inputs["audio_phs"][0][idx]
-                    final_text = final_text + text_chunks[i] + audio_placeholder
-                    idx += 1
-
-                final_text += text_chunks[-1]
-                messages[index]["content"] = final_text
-
-        if len(images) != num_image_tokens:
-            raise ValueError(f"The number of images does not match the number of {IMAGE_PLACEHOLDER} tokens.")
-
-        if len(videos) != num_video_tokens:
-            raise ValueError(f"The number of videos does not match the number of {VIDEO_PLACEHOLDER} tokens.")
-
-        if len(audios) != num_audio_tokens:
-            raise ValueError(f"The number of audios does not match the number of {AUDIO_PLACEHOLDER} tokens.")
-
-        return messages
-
-    @override
     def _get_mm_inputs(
         self,
         images: list["ImageInput"],
@@ -1085,6 +967,114 @@ class MiniCPMVPlugin(BasePlugin):
                 mm_inputs.update({"audio_phs": audio_phs})
 
         return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages: list[dict[str, str]],
+        images: list["ImageInput"],
+        videos: list["VideoInput"],
+        audios: list["AudioInput"],
+        processor: Optional["MMProcessor"],
+    ) -> list[dict[str, str]]:
+        self._validate_input(processor, images, videos, audios)
+        num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
+        messages = deepcopy(messages)
+        image_processor: BaseImageProcessor = getattr(processor, "image_processor")
+        mm_inputs, audio_inputs = {}, {}
+        if len(images) != 0 and len(videos) != 0:
+            raise ValueError("MiniCPM-V model does not support input images and videos at the same time.")
+
+        if len(videos) != 0:
+            max_slice_nums = 2
+            use_image_id = False
+            mm_inputs = self._get_mm_inputs([], videos, [], processor)
+        else:
+            max_slice_nums = image_processor.max_slice_nums
+            use_image_id = image_processor.use_image_id
+
+        for i, message in enumerate(messages):
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if num_image_tokens >= len(images):
+                    raise ValueError(f"`len(images)` is less than the number of {IMAGE_PLACEHOLDER} tokens.")
+
+                content = content.replace(IMAGE_PLACEHOLDER, "{{image}}", 1)
+                num_image_tokens += 1
+
+            while VIDEO_PLACEHOLDER in content:
+                if num_video_tokens >= len(videos):
+                    raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
+
+                video_seqlen = len(mm_inputs["pixel_values"][num_video_tokens]) if self.expand_mm_tokens else 1
+                content = content.replace(VIDEO_PLACEHOLDER, "{{image}}" * video_seqlen, 1)
+                num_video_tokens += 1
+
+            while AUDIO_PLACEHOLDER in content:
+                if num_audio_tokens >= len(audios):
+                    raise ValueError(f"`len(audios)` is less than the number of {AUDIO_PLACEHOLDER} tokens.")
+
+                content = content.replace(AUDIO_PLACEHOLDER, "{{audio}}", 1)
+                num_audio_tokens += 1
+
+            message["content"] = content.replace("{{image}}", "(<image>./</image>)").replace(
+                "{{audio}}", "(<audio>./</audio>)"
+            )
+
+        if len(images):
+            mm_inputs = self._get_mm_inputs(images, [], [], processor)
+
+        if len(audios):
+            audio_inputs = self._get_mm_inputs([], [], audios, processor, ret_phs=True)
+
+        if self.expand_mm_tokens and mm_inputs:
+            pattern = "(<image>./</image>)"
+            image_sizes = mm_inputs["image_sizes"]
+            idx = 0
+            for index, message in enumerate(messages):
+                text = message["content"]
+                image_tags = re.findall(pattern, text)
+                text_chunks = text.split(pattern)
+                final_text = ""
+                for i in range(len(image_tags)):
+                    final_text = (
+                        final_text
+                        + text_chunks[i]
+                        + image_processor.get_slice_image_placeholder(
+                            image_sizes[0][idx], idx, max_slice_nums, use_image_id
+                        )
+                    )
+                    idx += 1
+
+                final_text += text_chunks[-1]
+                messages[index]["content"] = final_text
+
+        if self.expand_mm_tokens and audio_inputs:
+            pattern = "(<audio>./</audio>)"
+            idx = 0
+            for index, message in enumerate(messages):
+                text = message["content"]
+                audio_tags = re.findall(pattern, text)
+                text_chunks = text.split(pattern)
+                final_text = ""
+                for i in range(len(audio_tags)):
+                    audio_placeholder = audio_inputs["audio_phs"][0][idx]
+                    final_text = final_text + text_chunks[i] + audio_placeholder
+                    idx += 1
+
+                final_text += text_chunks[-1]
+                messages[index]["content"] = final_text
+
+        if len(images) != num_image_tokens:
+            raise ValueError(f"The number of images does not match the number of {IMAGE_PLACEHOLDER} tokens.")
+
+        if len(videos) != num_video_tokens:
+            raise ValueError(f"The number of videos does not match the number of {VIDEO_PLACEHOLDER} tokens.")
+
+        if len(audios) != num_audio_tokens:
+            raise ValueError(f"The number of audios does not match the number of {AUDIO_PLACEHOLDER} tokens.")
+
+        return messages
 
     @override
     def get_mm_inputs(
@@ -1612,93 +1602,57 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         processor: Optional["MMProcessor"],
     ) -> list[dict[str, str]]:
         self._validate_input(processor, images, videos, audios)
+        num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
         messages = deepcopy(messages)
+        image_processor: BaseImageProcessor = getattr(processor, "image_processor", None)
+
+        merge_length = processor.image_processor.merge_size**2
+        use_audio_in_video = getattr(processor, "use_audio_in_video", False)
         if self.expand_mm_tokens:
             mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            if "feature_attention_mask" in mm_inputs:
+                input_lengths = (mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1) // 2 + 1
+                audio_lengths = (input_lengths - 2) // 2 + 1
         else:
             mm_inputs = {}
-
-        image_processor: BaseImageProcessor = getattr(processor, "image_processor", None)
-        num_audio_tokens, num_image_tokens, num_video_tokens = 0, 0, 0
-        use_audio_in_video = getattr(processor, "use_audio_in_video", False)
-
-        # get length or size from mm_inputs
-        if "feature_attention_mask" in mm_inputs:
-            input_lengths = (mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1) // 2 + 1
-            audio_lengths = (input_lengths - 2) // 2 + 1
-
-        if mm_inputs.get("image_grid_thw", None) is not None:
-            image_grid_thw = mm_inputs["image_grid_thw"]
-            merge_length = processor.image_processor.merge_size**2
-
-        if mm_inputs.get("video_grid_thw", None) is not None:
-            video_grid_thw = mm_inputs["video_grid_thw"]
-            merge_length = processor.image_processor.merge_size**2
-
-        if use_audio_in_video:
-            if audio_lengths is None:
-                raise ValueError("audio_lengths should exist when use_audio_in_video is `True`.")
-
-            if mm_inputs.get("video_grid_thw", None) is None:
-                raise ValueError("video_grid_thw should exist when use_audio_in_video is `True`.")
-
-            positions_list = []
-            for message in messages:  # get multimodal index when use_audio
-                positions = []
-                for special_token in [self.audio_token, self.image_token, self.video_token]:
-                    start = 0
-                    while True:
-                        pos = message["content"].find(special_token, start)
-                        if pos == -1:
-                            break
-                        positions.append((pos, special_token))
-                        start = pos + len(special_token)
-
-                positions_list.append(positions.sort(key=lambda x: x[0]))
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+            audio_lengths = [None] * len(audios)
 
         for message in messages:
             content = message["content"]
-            # separate with audio-video
             while IMAGE_PLACEHOLDER in content:
                 if num_image_tokens >= len(images):
                     raise ValueError(f"`len(images)` is less than the number of {IMAGE_PLACEHOLDER} tokens.")
 
-                image_token_replace_length = image_grid_thw[num_image_tokens].prod() // merge_length
+                image_seqlen = image_grid_thw[num_image_tokens].prod() // merge_length if self.expand_mm_tokens else 1
                 content = content.replace(
-                    IMAGE_PLACEHOLDER,
-                    f"<|vision_bos|>{self.image_token * image_token_replace_length}<|vision_eos|>",
-                    1,
+                    IMAGE_PLACEHOLDER, f"<|vision_bos|>{self.image_token * image_seqlen}<|vision_eos|>", 1
                 )
                 num_image_tokens += 1
 
-            if not use_audio_in_video:
-                while AUDIO_PLACEHOLDER in content:
+            if (
+                use_audio_in_video and len(audios) and len(videos)
+            ):  # if use the audio of video # deal video token and audio token togather
+                if len(videos) != len(audios):
+                    raise ValueError(
+                        f"Number of videos ({len(videos)}) must match number of audios ({len(audios)}) when using audio in video."
+                    )
+
+                while VIDEO_PLACEHOLDER in content:
+                    if num_video_tokens >= len(videos):
+                        raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
                     if num_audio_tokens >= len(audios):
                         raise ValueError(f"`len(audios)` is less than the number of {AUDIO_PLACEHOLDER} tokens.")
 
-                    audio_token_replace_length = audio_lengths[num_audio_tokens]
-                    content = content.replace(
-                        AUDIO_PLACEHOLDER,
-                        f"<|audio_bos|>{self.audio_token * audio_token_replace_length}<|audio_eos|>",
-                        1,
-                    )
-                    num_audio_tokens += 1
-
-                # TODO handle video_input and use_audio_in_video
-                while VIDEO_PLACEHOLDER in content:
-                    if num_video_tokens >= len(videos):
-                        raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
-
-                    video_replace_length = video_grid_thw[num_video_tokens].prod() // merge_length
-                    content = content.replace(
-                        VIDEO_PLACEHOLDER, f"<|vision_bos|>{self.video_token * video_replace_length}<|vision_eos|>", 1
-                    )
-                    num_video_tokens += 1
-
-            else:  # if use the audio of video # deal video token and audio token togather
-                while VIDEO_PLACEHOLDER in content:
-                    if num_video_tokens >= len(videos):
-                        raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
+                    video_pos = content.find(VIDEO_PLACEHOLDER)
+                    audio_pos = content.find(AUDIO_PLACEHOLDER, video_pos)
+                    if audio_pos == -1 or audio_pos < video_pos:
+                        raise ValueError(
+                            f"Each {VIDEO_PLACEHOLDER} must be followed by an {AUDIO_PLACEHOLDER} when using audio in video."
+                        )
 
                     audio_t_index = torch.arange(audio_lengths[num_audio_tokens])
                     video_t_index = (
@@ -1731,6 +1685,28 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                     content = content.replace(VIDEO_PLACEHOLDER, placeholder_string, 1)
                     content = content.replace(AUDIO_PLACEHOLDER, "", 1)
                     num_audio_tokens += 1
+                    num_video_tokens += 1
+            else:
+                while AUDIO_PLACEHOLDER in content:
+                    if num_audio_tokens >= len(audios):
+                        raise ValueError(f"`len(audios)` is less than the number of {AUDIO_PLACEHOLDER} tokens.")
+
+                    audio_seqlen = audio_lengths[num_audio_tokens] if self.expand_mm_tokens else 1
+                    content = content.replace(
+                        AUDIO_PLACEHOLDER, f"<|audio_bos|>{self.audio_token * audio_seqlen}<|audio_eos|>", 1
+                    )
+                    num_audio_tokens += 1
+
+                while VIDEO_PLACEHOLDER in content:
+                    if num_video_tokens >= len(videos):
+                        raise ValueError(f"`len(videos)` is less than the number of {VIDEO_PLACEHOLDER} tokens.")
+
+                    video_seqlen = (
+                        video_grid_thw[num_video_tokens].prod() // merge_length if self.expand_mm_tokens else 1
+                    )
+                    content = content.replace(
+                        VIDEO_PLACEHOLDER, f"<|vision_bos|>{self.video_token * video_seqlen}<|vision_eos|>", 1
+                    )
                     num_video_tokens += 1
 
             message["content"] = content
