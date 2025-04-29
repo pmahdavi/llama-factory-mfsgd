@@ -99,6 +99,9 @@ def _plot_layerwise(
 
 SAMPLE_LIMIT = 200_000  # max elements to keep per layer for histogram
 
+# For per‑parameter histograms we keep more elements by default
+PARAM_HIST_LIMIT = 1_000_000  # adjust as needed
+
 
 def _collect_layer_values(state: Dict[str, Dict[str, Any]], key: str, abs_vals: bool = False) -> Dict[int, torch.Tensor]:
     """Return a dict[layer_id → 1‑D tensor] containing (optionally absolute) values.
@@ -143,6 +146,127 @@ def _plot_hist(values: torch.Tensor, title: str, *, ax: plt.Axes | None = None, 
         fig.tight_layout()
         fig.savefig(f"{title.replace(' ', '_')}.png", dpi=150)
         plt.close(fig)
+
+
+# --------------------------- per‑parameter helper ---------------------------
+
+
+def _plot_hist_save(values: torch.Tensor, title: str, save_path: Path, *, bins: int = 100) -> None:
+    """Save a standalone histogram figure for *values*.
+
+    Comparable to :func:`_plot_hist`, but writes directly to *save_path* and
+    applies a higher element cap (`PARAM_HIST_LIMIT`) suitable for
+    per‑parameter visualisations.
+    """
+    if values.numel() == 0:
+        return
+
+    if values.numel() > PARAM_HIST_LIMIT:
+        idx = torch.randperm(values.numel())[:PARAM_HIST_LIMIT]
+        values = values[idx]
+
+    plt.figure(figsize=(6, 4))
+    plt.hist(values.numpy(), bins=bins, log=True, color="#1f77b4", alpha=0.75, edgecolor="black")
+    plt.title(title)
+    plt.xlabel("value")
+    plt.ylabel("log‑frequency")
+    plt.grid(linewidth=0.3, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
+
+# Additional helper: heatmap plotting for exp_avg_sq
+
+def _plot_heatmap(values: torch.Tensor, title: str, save_path: Path, *, max_side: int = 128) -> None:
+    """Save a heatmap image for the given 1‑D tensor *values*.
+
+    The tensor is (optionally) down‑sampled and reshaped into a roughly‑square
+    matrix so that ``plt.imshow`` can visualise it as a heatmap.  The colourbar
+    uses a logarithmic scale to improve visibility for parameters that span
+    several orders of magnitude.
+
+    Args:
+        values: 1‑D tensor containing the optimiser statistics for a particular
+            layer (``exp_avg_sq``).  Must contain at least one element.
+        title: Title for the plot.
+        save_path: Destination ``.png`` file path.
+        max_side: Maximum side length (⩾ 1) for the square heatmap grid.  The
+            total number of elements therefore is ``max_side ** 2``.  Elements
+            beyond this limit are randomly sampled to keep the plot size
+            manageable.
+    """
+    if values.numel() == 0:
+        return  # nothing to plot
+
+    # Down‑sample if necessary.
+    total_limit = max_side * max_side
+    if values.numel() > total_limit:
+        idx = torch.randperm(values.numel())[: total_limit]
+        values = values[idx]
+
+    # Pad with NaNs if we have fewer than required so reshape works nicely.
+    if values.numel() < total_limit:
+        pad = total_limit - values.numel()
+        values = torch.cat([values, torch.full((pad,), float("nan"))])
+
+    # Reshape into square grid.
+    grid = values.view(max_side, max_side)
+
+    # Plot heatmap.
+    plt.figure(figsize=(6, 6))
+    # Use logarithmic colour scale; add a small epsilon to avoid log(0).
+    import numpy as np
+    grid_np = grid.abs().numpy()  # ensure positive values for log scale
+    eps = np.finfo(grid_np.dtype).tiny
+    img = plt.imshow(np.log10(grid_np + eps), cmap="viridis", aspect="auto")
+    plt.title(title)
+    plt.axis("off")
+    cbar = plt.colorbar(img, fraction=0.046, pad=0.04)
+    cbar.set_label("log10(value)")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
+
+# -------------------- NEW: per‑parameter 2‑D heatmaps --------------------
+
+def _downsample_tensor_2d(t: torch.Tensor, max_side: int = 256) -> torch.Tensor:
+    """Down‑sample a 2‑D tensor so that both sides are ≤ ``max_side``.
+
+    Uses simple strided slicing – sufficient for visualisation purposes.
+    """
+    h, w = t.shape
+    if h <= max_side and w <= max_side:
+        return t
+    step_h = max(1, int(torch.ceil(torch.tensor(h / max_side)).item()))
+    step_w = max(1, int(torch.ceil(torch.tensor(w / max_side)).item()))
+    return t[::step_h, ::step_w]
+
+
+def _plot_heatmap_2d(tensor: torch.Tensor, title: str, save_path: Path, *, max_side: int = 1024) -> None:
+    """Plot a heatmap for a single 2‑D tensor (absolute values, log10 scale)."""
+    if tensor.numel() == 0:
+        return
+    # Ensure CPU, float32 for plotting
+    data = tensor.detach().abs().cpu()
+
+    # Down‑sample only if *both* dimensions are substantially larger than max_side
+    if max(data.shape) > max_side * 1.5:  # allow a bit of slack
+        data = _downsample_tensor_2d(data, max_side=max_side)
+
+    import numpy as np
+    arr = data.numpy()
+    eps = np.finfo(arr.dtype).tiny
+    plt.figure(figsize=(6, 5))
+    img = plt.imshow(np.log10(arr + eps), cmap="viridis", aspect="auto" )
+    plt.title(title)
+    plt.axis("off")
+    cbar = plt.colorbar(img, fraction=0.046, pad=0.04)
+    cbar.set_label("log10(|value|)")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
 
 
 def main() -> None:  # noqa: C901
@@ -229,33 +353,59 @@ def main() -> None:  # noqa: C901
         print(f"  → saved: {combo_path}")
 
     # ------------------------------------------------------------------
-    # Per‑layer histograms: combined figure per layer (exp_avg & exp_avg_sq)
+    # Per‑parameter histograms & heatmaps
     # ------------------------------------------------------------------
-    print("\nGenerating per‑layer combined histograms …")
 
-    exp_layers = _collect_layer_values(state, "exp_avg", abs_vals=True) if not args.no_exp_avg else {}
-    sq_layers = _collect_layer_values(state, "exp_avg_sq", abs_vals=False) if not args.no_exp_avg_sq else {}
+    print("\nGenerating per‑parameter histograms and heatmaps …")
 
-    all_layer_ids = sorted(set(exp_layers) | set(sq_layers))
-    for lid in all_layer_ids:
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    hist_dir = out_dir / "per_param_histograms"
+    hist_dir.mkdir(exist_ok=True, parents=True)
+    heat_dir = out_dir / "per_param_heatmaps"
+    heat_dir.mkdir(exist_ok=True, parents=True)
 
-        if lid in exp_layers:
-            _plot_hist(exp_layers[lid], "|exp_avg|", ax=axes[0])
-        else:
-            axes[0].set_visible(False)
+    for pname, p_state in state.items():
+        safe_name = pname.replace("/", "_").replace(".", "_")
 
-        if lid in sq_layers:
-            _plot_hist(sq_layers[lid], "exp_avg_sq", ax=axes[1])
-        else:
-            axes[1].set_visible(False)
+        # ------------------- Histogram(s) -------------------
+        if not args.no_exp_avg and "exp_avg" in p_state:
+            tensor = p_state["exp_avg"]
+            if torch.is_tensor(tensor) and tensor.numel() > 0:
+                vals = tensor.detach().flatten().abs().cpu()
+                _plot_hist_save(
+                    vals,
+                    f"|exp_avg| – {pname}",
+                    hist_dir / f"hist_exp_avg_{safe_name}.png",
+                )
 
-        fig.suptitle(f"Layer {lid} optimiser distributions", y=1.02)
-        fig.tight_layout()
-        fig.savefig(out_dir / f"hist_layer_{lid:03}.png", dpi=150)
-        plt.close(fig)
+                # Optional heatmap for 2‑D exp_avg
+                if tensor.dim() == 2:
+                    _plot_heatmap_2d(
+                        tensor,
+                        f"{pname} (exp_avg)",
+                        heat_dir / f"heatmap_exp_avg_{safe_name}.png",
+                    )
 
-    print("Histogram images saved in", out_dir)
+        if not args.no_exp_avg_sq and "exp_avg_sq" in p_state:
+            tensor = p_state["exp_avg_sq"]
+            if torch.is_tensor(tensor) and tensor.numel() > 0:
+                vals = tensor.detach().flatten().cpu()
+                _plot_hist_save(
+                    vals,
+                    f"exp_avg_sq – {pname}",
+                    hist_dir / f"hist_exp_avg_sq_{safe_name}.png",
+                )
+
+                # ----------------- Heatmap(s) -----------------
+                if tensor.dim() == 2:
+                    _plot_heatmap_2d(
+                        tensor,
+                        f"{pname} (exp_avg_sq)",
+                        heat_dir / f"heatmap_{safe_name}.png",
+                    )
+
+    print("Per‑parameter histograms saved in", hist_dir)
+    if not args.no_exp_avg_sq:
+        print("Per‑parameter heatmaps saved in", heat_dir)
 
 
 if __name__ == "__main__":

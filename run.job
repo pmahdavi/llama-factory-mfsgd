@@ -1,9 +1,9 @@
 #!/bin/tcsh
-#PBS -l ngpus=1
+#PBS -l ngpus=0
 #PBS -l ncpus=8
-#PBS -l walltime=01:00:00
+#PBS -l walltime=04:00:00
 #PBS -q workq@e5-cse-cbgpu01.eecscl.psu.edu
-#PBS -N extract
+#PBS -N plot
 #PBS -M pxm5426@psu.edu 
 #PBS -m bea
 #PBS -l mem=60g
