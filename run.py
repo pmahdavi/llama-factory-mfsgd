@@ -27,6 +27,18 @@ def create_pbs_script(config_file, run_name, walltime, ngpus, ncpus, mem, output
     # Create the output_config_path in the output directory
     output_config = os.path.join(output_dir, "training_config.yaml")
     
+    # Check if config has GaLore and its fused implementation setting
+    galore_mode = ""
+    try:
+        with open(config_file, 'r') as f:
+            config = yaml.safe_load(f)
+            if config.get('use_galore', False):
+                fused_enabled = config.get('galore_fused', True)
+                galore_mode = f"Using {'fused' if fused_enabled else 'NON-FUSED'} GaLore implementation"
+    except Exception:
+        # Default message if we can't read the config
+        galore_mode = "Using GaLore implementation"
+    
     pbs_script = f"""#!/bin/tcsh
 #PBS -l ngpus={ngpus}
 #PBS -l ncpus={ncpus}
@@ -50,6 +62,10 @@ endif
 # Set the run name for wandb
 setenv WANDB_NAME {run_name}
 setenv WANDB_PROJECT "llama-factory"
+# Enable debug logging for pytorch
+setenv TORCH_DISTRIBUTED_DEBUG DETAIL
+# Set logging level to INFO
+setenv LLAMAFACTORY_VERBOSITY INFO
 
 # Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
 # setenv FORCE_TORCHRUN 1
@@ -61,9 +77,35 @@ echo "Output directory: {output_dir}"
 # Activate the llama-factory conda environment
 conda activate llama-factory-env
 
+# Check for and install required dependencies
+pip install omegaconf --quiet
+# Make sure our custom galore implementation is installed from the right location
+pip install -e ./galore-torch --quiet
+
+echo "=== Running nvidia-smi to show GPU status ==="
+nvidia-smi
+echo "=== Starting training with verbose output ==="
+
+# Add note about GaLore implementation
+echo "NOTE: Using fixed GaLore implementation that avoids redundant SVD computations"
+echo "during gradient accumulation steps."
+{f'echo "{galore_mode}"' if galore_mode else ''}
+
+# Monitor GPU usage (TCSH compatible version)
+echo "Starting GPU monitoring in background"
+nvidia-smi --loop=60 > gpu_monitor.log &
+set background_pid=$!
 
 # Run training with the config file in the output directory
 llamafactory-cli train {output_config}
+
+# Kill the background process if it exists
+if ($?background_pid) then
+  echo "Stopping GPU monitoring (PID: $background_pid)"
+  kill $background_pid
+endif
+
+echo "Training completed or was interrupted."
 """
     return pbs_script, hostname
 
@@ -113,6 +155,14 @@ def generate_run_name(config_file, ngpus=4):
         if finetuning_type:
             components.append(finetuning_type)
         
+        # Check if GaLore is enabled and include it in the run name
+        if config.get('use_galore', False):
+            # Check if fused implementation is enabled (defaults to true)
+            if config.get('galore_fused', True):
+                components.append('galore_fused')
+            else:
+                components.append('galore')
+            
         if effective_bs:
             components.append(f'ebs{effective_bs}')
         

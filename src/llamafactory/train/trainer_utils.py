@@ -214,6 +214,7 @@ def _create_galore_optimizer(
         "update_proj_gap": finetuning_args.galore_update_interval,
         "scale": finetuning_args.galore_scale,
         "proj_type": finetuning_args.galore_proj_type,
+        "fused": getattr(finetuning_args, "galore_fused", True),
     }
 
     id_galore_params = {id(param) for param in galore_params}
