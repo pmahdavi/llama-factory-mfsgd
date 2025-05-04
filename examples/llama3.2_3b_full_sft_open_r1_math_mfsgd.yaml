@@ -6,29 +6,29 @@ trust_remote_code: true
 stage: sft
 do_train: true
 finetuning_type: full
-# deepspeed: examples/deepspeed/ds_z3_config.json # Commented out as GaLore is incompatible with DeepSpeed
 
-### GaLore configuration
-use_galore: true
-galore_target: all
-galore_rank: 16
-galore_update_interval: 200
-galore_scale: 2.0
-galore_proj_type: std
-galore_fused: true  # Enable fused implementation (applies optimizer updates in post-backward hooks)
-galore_layerwise: false  # Setting to false as requested, internal fused implementation will be used instead
+### Momentum-Factorized SGD configuration
+use_mfsgd: true      # enable the new optimiser
+mfsgd_rank: 16
+mfsgd_beta: 0.9
+mfsgd_eta1: 1.0
+mfsgd_eta2: 0.0
+mfsgd_eps: 1.0e-8
+mfsgd_nesterov: false
+mfsgd_use_current_projection: false
+mfsgd_use_ones_for_nonzero_s: false
+mfsgd_max_value: 10000
 
 ### dataset
 dataset: Open-R1-Math
 template: llama3
 cutoff_len: 2048
-# max_samples: 1000 # Optional: uncomment and set for quicker testing
 overwrite_cache: true
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/Llama-3.2-3B/galore/sft_open_r1_math
+output_dir: saves/Llama-3.2-3B/mfsgd/sft_open_r1_math
 logging_steps: 10
 save_steps: 500
 plot_loss: true
@@ -39,7 +39,7 @@ report_to: wandb
 ### train
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 128
-learning_rate: 1.0e-4
+learning_rate: 1.0e-3
 num_train_epochs: 2.0
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
@@ -47,8 +47,7 @@ bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
 
-## eval
-# eval_dataset: Open-R1-Math # Optional: specify eval set if needed/available
+### eval
 val_size: 0.1
 per_device_eval_batch_size: 4
 eval_strategy: steps

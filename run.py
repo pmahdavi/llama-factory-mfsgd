@@ -155,14 +155,18 @@ def generate_run_name(config_file, ngpus=4):
         if finetuning_type:
             components.append(finetuning_type)
         
-        # Check if GaLore is enabled and include it in the run name
+        # Custom optimiser indicators in run name --------------------------------
         if config.get('use_galore', False):
             # Check if fused implementation is enabled (defaults to true)
             if config.get('galore_fused', True):
                 components.append('galore_fused')
             else:
                 components.append('galore')
-            
+
+        # Add MFSGD tag if enabled
+        if config.get('use_mfsgd', False):
+            components.append('mfsgd')
+        
         if effective_bs:
             components.append(f'ebs{effective_bs}')
         

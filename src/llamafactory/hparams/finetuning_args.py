@@ -350,6 +350,61 @@ class BAdamArgument:
 
 
 @dataclass
+class MFSGDArguments:
+    """Arguments for MomentumFactorizedSGD optimizer."""
+
+    use_mfsgd: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the MomentumFactorizedSGD optimizer."},
+    )
+
+    mfsgd_rank: int = field(
+        default=2,
+        metadata={"help": "Rank r for MomentumFactorizedSGD."},
+    )
+
+    mfsgd_beta: float = field(
+        default=0.9,
+        metadata={"help": "Momentum decay factor beta in MFSGD."},
+    )
+
+    mfsgd_eta1: float = field(
+        default=1.0,
+        metadata={"help": "Scale factor eta1 for the low-rank momentum term."},
+    )
+
+    mfsgd_eta2: float = field(
+        default=1.0,
+        metadata={"help": "Scale factor eta2 for the orthogonal complement gradient term."},
+    )
+
+    mfsgd_use_current_projection: bool = field(
+        default=False,
+        metadata={"help": "Whether to use current (t+1) or previous (t) projection matrices when computing updates."},
+    )
+
+    mfsgd_use_ones_for_nonzero_s: bool = field(
+        default=False,
+        metadata={"help": "If set, treat reciprocals of non-zero singular values as 1 (useful for stability)."},
+    )
+
+    mfsgd_eps: float = field(
+        default=1e-4,
+        metadata={"help": "Epsilon threshold for treating singular values as zero (numerical stability)."},
+    )
+
+    mfsgd_nesterov: bool = field(
+        default=False,
+        metadata={"help": "Whether to apply Nesterov-style extrapolation in the MFSGD factor update."},
+    )
+
+    mfsgd_max_value: float = field(
+        default=10000.0,
+        metadata={"help": "Maximum clip value for reciprocal singular values (to avoid explosion)."},
+    )
+
+
+@dataclass
 class SwanLabArguments:
     use_swanlab: bool = field(
         default=False,
@@ -391,7 +446,14 @@ class SwanLabArguments:
 
 @dataclass
 class FinetuningArguments(
-    SwanLabArguments, BAdamArgument, ApolloArguments, GaloreArguments, RLHFArguments, LoraArguments, FreezeArguments
+    SwanLabArguments,
+    BAdamArgument,
+    ApolloArguments,
+    GaloreArguments,
+    MFSGDArguments,
+    RLHFArguments,
+    LoraArguments,
+    FreezeArguments,
 ):
     r"""Arguments pertaining to which techniques we are going to fine-tuning with."""
 
@@ -486,8 +548,10 @@ class FinetuningArguments(
         if self.finetuning_type == "lora" and (self.use_galore or self.use_apollo or self.use_badam):
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
 
-        if int(self.use_galore) + int(self.use_apollo) + (self.use_badam) > 1:
-            raise ValueError("Cannot use GaLore, APOLLO or BAdam together.")
+        # Ensure that at most one custom optimizer is enabled
+        _opt_count = int(self.use_galore) + int(self.use_apollo) + int(self.use_badam) + int(self.use_mfsgd)
+        if _opt_count > 1:
+            raise ValueError("Cannot enable more than one of GaLore, APOLLO, BAdam, or MFSGD optimizers together.")
 
         if self.pissa_init and (self.stage in ["ppo", "kto"] or self.use_ref_model):
             raise ValueError("Cannot use PiSSA for current training stage.")

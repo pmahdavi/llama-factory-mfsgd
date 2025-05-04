@@ -520,6 +520,37 @@ def _create_muon_optimizer(
     return optimizer
 
 
+def _create_mfsgd_optimizer(
+    model: "PreTrainedModel",
+    training_args: "TrainingArguments",
+    finetuning_args: "FinetuningArguments",
+) -> "torch.optim.Optimizer":
+    """Instantiate MomentumFactorizedSGD with passed hyperparameters."""
+
+    from ..optimizer.mfsgd import MomentumFactorizedSGD  # relative import within llamafactory package
+
+    optimizer = MomentumFactorizedSGD(
+        model.parameters(),
+        lr=training_args.learning_rate,
+        rank=finetuning_args.mfsgd_rank,
+        beta=finetuning_args.mfsgd_beta,
+        eta1=finetuning_args.mfsgd_eta1,
+        eta2=finetuning_args.mfsgd_eta2,
+        use_current_projection=finetuning_args.mfsgd_use_current_projection,
+        use_ones_for_nonzero_s=finetuning_args.mfsgd_use_ones_for_nonzero_s,
+        mfsgd_eps=finetuning_args.mfsgd_eps,
+        nesterov=finetuning_args.mfsgd_nesterov,
+        max_value=finetuning_args.mfsgd_max_value,
+        # AdamW fallback uses global training args for consistency
+        adam_betas=(training_args.adam_beta1, training_args.adam_beta2),
+        adam_eps=training_args.adam_epsilon,
+        adam_weight_decay=training_args.weight_decay,
+    )
+
+    logger.info_rank0("Using MomentumFactorizedSGD optimizer.")
+    return optimizer
+
+
 def create_custom_optimizer(
     model: "PreTrainedModel",
     training_args: "TrainingArguments",
@@ -542,6 +573,9 @@ def create_custom_optimizer(
 
     if finetuning_args.use_muon:
         return _create_muon_optimizer(model, training_args)
+
+    if finetuning_args.use_mfsgd:
+        return _create_mfsgd_optimizer(model, training_args, finetuning_args)
 
 
 def create_custom_scheduler(
