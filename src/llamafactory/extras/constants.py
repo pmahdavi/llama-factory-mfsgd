@@ -533,6 +533,17 @@ register_model_group(
             DownloadSource.DEFAULT: "deepseek-ai/DeepSeek-V3",
             DownloadSource.MODELSCOPE: "deepseek-ai/DeepSeek-V3",
         },
+        "DeepSeek-V3-671B-0324-Chat": {
+            DownloadSource.DEFAULT: "deepseek-ai/DeepSeek-V3-0324",
+            DownloadSource.MODELSCOPE: "deepseek-ai/DeepSeek-V3-0324",
+        },
+    },
+    template="deepseek3",
+)
+
+
+register_model_group(
+    models={
         "DeepSeek-R1-1.5B-Distill": {
             DownloadSource.DEFAULT: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
             DownloadSource.MODELSCOPE: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
@@ -566,7 +577,7 @@ register_model_group(
             DownloadSource.MODELSCOPE: "deepseek-ai/DeepSeek-R1",
         },
     },
-    template="deepseek3",
+    template="deepseekr1",
 )
 
 
@@ -737,6 +748,13 @@ register_model_group(
             DownloadSource.DEFAULT: "THUDM/GLM-4-32B-0414",
             DownloadSource.MODELSCOPE: "ZhipuAI/GLM-4-32B-0414",
         },
+    },
+    template="glm4",
+)
+
+
+register_model_group(
+    models={
         "GLM-Z1-9B-0414-Chat": {
             DownloadSource.DEFAULT: "THUDM/GLM-Z1-9B-0414",
             DownloadSource.MODELSCOPE: "ZhipuAI/GLM-Z1-9B-0414",
@@ -746,7 +764,7 @@ register_model_group(
             DownloadSource.MODELSCOPE: "ZhipuAI/GLM-Z1-32B-0414",
         },
     },
-    template="glm4",
+    template="glmz1",
 )
 
 
@@ -2461,6 +2479,14 @@ register_model_group(
             DownloadSource.DEFAULT: "Qwen/Qwen3-235B-A22B",
             DownloadSource.MODELSCOPE: "Qwen/Qwen3-235B-A22B",
         },
+        "Qwen3-14B-Instruct-AWQ": {
+            DownloadSource.DEFAULT: "Qwen/Qwen3-14B-AWQ",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-14B-AWQ",
+        },
+        "Qwen3-32B-Instruct-AWQ": {
+            DownloadSource.DEFAULT: "Qwen/Qwen3-32B-AWQ",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen3-32B-AWQ",
+        },
     },
     template="qwen3",
 )
@@ -2484,10 +2510,14 @@ register_model_group(
 
 register_model_group(
     models={
+        "Qwen2.5-Omni-3B": {
+            DownloadSource.DEFAULT: "Qwen/Qwen2.5-Omni-3B",
+            DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Omni-3B",
+        },
         "Qwen2.5-Omni-7B": {
             DownloadSource.DEFAULT: "Qwen/Qwen2.5-Omni-7B",
             DownloadSource.MODELSCOPE: "Qwen/Qwen2.5-Omni-7B",
-        }
+        },
     },
     template="qwen2_omni",
     multimodal=True,
