@@ -1674,6 +1674,20 @@ register_template(
 
 
 register_template(
+    name="tulu_v3",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
+    # Assistant format includes the tokenizer's default EOS token *after* the content, and a newline
+    format_assistant=StringFormatter(slots=["<|assistant|>\n{{content}}", {"eos_token"}, "\n"]),
+    format_system=StringFormatter(slots=["<|system|>\n{{content}}\n"]),
+    # Add BOS token at the beginning of the conversation
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    # Use the tokenizer's default EOS, don't replace it or add extra stop words by default
+    # Important: Use specific Tulu stop words if known, otherwise default EOS is the main stop signal
+    replace_eos=False,
+    stop_words=[], # Add known Tulu stop tokens here if any (e.g., "<|endoftext|>")
+    replace_jinja_template=False, # Don't try to auto-generate a Jinja template for the tokenizer
+)
+register_template(
     name="vicuna",
     format_user=StringFormatter(slots=["USER: {{content}} ASSISTANT:"]),
     default_system=(

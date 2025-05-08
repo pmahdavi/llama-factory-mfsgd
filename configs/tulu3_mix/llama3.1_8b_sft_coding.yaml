@@ -1,0 +1,41 @@
+### model
+model_name_or_path: meta-llama/Llama-3.1-8B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z3_config.json
+
+### dataset
+dataset: tulu3_mixture_coding # Use the key defined in dataset_info.json
+template: tulu_v3
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 16
+
+### output
+output_dir: saves/Llama-3.1-8B/tulu3-sft/coding
+logging_steps: 10
+save_strategy: steps
+save_steps: 3000
+eval_strategy: "no"
+  # eval_steps: 500
+  # per_device_eval_batch_size: 2
+plot_loss: true
+overwrite_output_dir: true
+report_to: wandb
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 32
+learning_rate: 5.0e-6
+num_train_epochs: 1.0
+lr_scheduler_type: linear
+warmup_ratio: 0.03
+bf16: true
+ddp_timeout: 180000000
+
+# ### eval
+# val_size: 0.01 

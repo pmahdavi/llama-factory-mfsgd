@@ -2,6 +2,97 @@
   "identity": {
     "file_name": "identity.json"
   },
+  "tulu3_mixture_general": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "general",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_knowledge_recall": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "knowledge_recall",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_math_reasoning": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "math_reasoning",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_coding": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "coding",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_safety_compliance": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "safety_and_compliance",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_multilingual": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "multilingual",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "tulu3_mixture_precise_if": {
+    "script_url": "tulu3_category_loader.py",
+    "subset": "precise_if",
+    "columns": {"messages": "messages"},
+    "formatting": "sharegpt",
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
   "Open-R1-Math": {
     "hf_hub_url": "open-r1/OpenR1-Math-220k",
     "columns": {
