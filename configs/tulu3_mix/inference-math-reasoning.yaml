@@ -1,0 +1,5 @@
+model_name_or_path: /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06/checkpoint-2400
+template: tulu_v3
+infer_backend: huggingface  # choices: [huggingface, vllm, sglang]
+# You can change infer_backend to vllm for potentially faster inference if vLLM is installed and compatible.
+trust_remote_code: true 

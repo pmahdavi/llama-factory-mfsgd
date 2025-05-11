@@ -88,7 +88,14 @@ def main():  # noqa: C901 – keep linear for readability
     if not ckpt_dir.is_dir():
         raise FileNotFoundError(f"Checkpoint directory not found: {ckpt_dir}")
 
-    output_dir: Path = (args.output_dir or (run_dir / "export_full_state")).expanduser().resolve()
+    if args.output_dir is None:
+        # Append checkpoint name to the default output directory
+        output_dir_name = f"export_full_state_{ckpt_dir.name}"
+        output_dir: Path = (run_dir / output_dir_name).expanduser().resolve()
+    else:
+        # Use user-provided output directory
+        output_dir: Path = args.output_dir.expanduser().resolve()
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("================ Consolidation summary ================")
