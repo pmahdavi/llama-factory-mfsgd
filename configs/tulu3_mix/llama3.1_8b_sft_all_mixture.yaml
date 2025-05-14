@@ -9,20 +9,19 @@ finetuning_type: full
 deepspeed: examples/deepspeed/ds_z3_config.json
 
 ### dataset
-dataset: tulu3_mixture_coding # Use the key defined in dataset_info.json
+dataset: tulu3_mixture_coding,tulu3_mixture_general,tulu3_mixture_knowledge_recall,tulu3_mixture_math_reasoning,tulu3_mixture_precise_if
 template: tulu_v3
+mix_strategy: concat  # Use concat to create the exact union of all datasets
+streaming: false  # Ensure non-streaming mode for proper shuffling across datasets
 cutoff_len: 4096
 overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: saves/Llama-3.1-8B/tulu3-sft/coding
+output_dir: saves/Llama-3.1-8B/tulu3-sft/all_mixture
 logging_steps: 10
-save_strategy: steps
-save_steps: 600
+save_strategy: epoch  # Save checkpoint at the end of each epoch
 eval_strategy: "no"
-  # eval_steps: 500
-  # per_device_eval_batch_size: 2
 plot_loss: true
 overwrite_output_dir: true
 report_to: wandb

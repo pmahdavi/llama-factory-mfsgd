@@ -68,7 +68,7 @@ setenv TORCH_DISTRIBUTED_DEBUG DETAIL
 setenv LLAMAFACTORY_VERBOSITY INFO
 
 # Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
-# setenv FORCE_TORCHRUN 1
+setenv FORCE_TORCHRUN 1
 
 echo "Starting training run: {run_name}"
 echo "Using config file: {output_config}"

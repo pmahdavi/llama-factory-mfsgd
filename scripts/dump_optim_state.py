@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+import safetensors.torch  # Added for saving exp_avg_sq
 from transformers import Trainer
 from llamafactory.hparams.parser import get_train_args
 from llamafactory.model import load_model, load_tokenizer
@@ -71,6 +72,11 @@ def main():  # noqa: C901 – keep linear for readability
         type=Path,
         default=None,
         help="Destination folder for consolidated files (default: <run_dir>/export_full_state)",
+    )
+    parser.add_argument(
+        "--save_exp_avg_sq_only",
+        action="store_true",
+        help="If set, save only the 'exp_avg_sq' tensors to exp_avg_sq.safetensors instead of the full state."
     )
     args = parser.parse_args()
 
@@ -169,69 +175,93 @@ def main():  # noqa: C901 – keep linear for readability
         unwrapped_model = trainer.accelerator.unwrap_model(trainer.model)
 
         full_state: dict[str, dict] | None = {} if trainer.is_world_process_zero() else None
+        exp_avg_sq_state: dict[str, torch.Tensor] | None = {} if trainer.is_world_process_zero() and args.save_exp_avg_sq_only else None
         param_names: list[str] = []
 
         for name, param in unwrapped_model.named_parameters():
             # ensure every rank participates in the collective all‑gather
             opt_entry: dict[str, torch.Tensor | int | float] = {}
+            gathered_exp_avg_sq: torch.Tensor | None = None # To store exp_avg_sq if needed
 
             # Under ZeRO‑3 the per‑param optimiser tensors live inside the flat group
             group_idx, *_ = ds_opt.grad_position[ds_opt.get_param_id(param)]
             fp32_flat_param = ds_opt.fp32_partitioned_groups_flat[group_idx]
             base_state = ds_opt.optimizer.state[fp32_flat_param]
 
-            for key, example_val in base_state.items():
-                is_tensor = torch.is_tensor(example_val)
-                is_collectable = is_tensor and example_val.dim() > 0 and example_val.numel() > 0
+            if not args.save_exp_avg_sq_only:
+                # Gather full state for this parameter
+                for key, example_val in base_state.items():
+                    is_tensor = torch.is_tensor(example_val)
+                    is_collectable = is_tensor and example_val.dim() > 0 and example_val.numel() > 0
 
-                if is_collectable:
-                    # tensor with real elements → all‑gather from ZeRO
-                    gathered = ds_opt.get_full_hp_param(param, optim_state_key=key)
-                    if trainer.is_world_process_zero():
-                        opt_entry[key] = gathered.cpu()
+                    if is_collectable:
+                        gathered = ds_opt.get_full_hp_param(param, optim_state_key=key)
+                        if trainer.is_world_process_zero():
+                            opt_entry[key] = gathered.cpu()
+                    else:
+                        if trainer.is_world_process_zero():
+                            opt_entry[key] = example_val.clone().cpu() if is_tensor else example_val
+                        dist.barrier() # keep ranks in sync
+            elif args.save_exp_avg_sq_only:
+                # Gather only exp_avg_sq for this parameter
+                if "exp_avg_sq" in base_state:
+                    example_val = base_state["exp_avg_sq"]
+                    is_tensor = torch.is_tensor(example_val)
+                    is_collectable = is_tensor and example_val.dim() > 0 and example_val.numel() > 0
+
+                    if is_collectable:
+                        gathered = ds_opt.get_full_hp_param(param, optim_state_key="exp_avg_sq")
+                        if trainer.is_world_process_zero():
+                            gathered_exp_avg_sq = gathered.cpu()
+                    else:
+                        # Should not happen for exp_avg_sq, but handle defensively
+                        if trainer.is_world_process_zero():
+                            print(f"[WARN] Unexpected non-collectable 'exp_avg_sq' for param {name}. Skipping.")
+                        dist.barrier() # keep ranks in sync
                 else:
-                    # scalar tensors (0‑dim) or non‑tensors: value identical on every rank
                     if trainer.is_world_process_zero():
-                        opt_entry[key] = example_val.clone().cpu() if is_tensor else example_val
-                    # keep ranks in sync so loop length identical
-                    dist.barrier()
+                        print(f"[WARN] 'exp_avg_sq' not found in optimizer state for param {name}. Skipping.")
+                    dist.barrier() # keep ranks in sync
 
             if trainer.is_world_process_zero():
-                full_state[name] = opt_entry
+                if not args.save_exp_avg_sq_only:
+                    full_state[name] = opt_entry
+                elif args.save_exp_avg_sq_only and gathered_exp_avg_sq is not None:
+                    exp_avg_sq_state[name] = gathered_exp_avg_sq
                 param_names.append(name)
 
         # Only rank‑0 serialises to disk
         if trainer.is_world_process_zero():
-            # minimal param_group: keep hyper‑params from first group
-            base_pg = ds_opt.optimizer.param_groups[0].copy()
-            base_pg["params"] = param_names
-            # prune objects that are not JSON/torch‑save friendly (e.g. tensor refs)
-            base_pg.pop("params_flat", None)
+            if not args.save_exp_avg_sq_only:
+                # minimal param_group: keep hyper‑params from first group
+                base_pg = ds_opt.optimizer.param_groups[0].copy()
+                base_pg["params"] = param_names
+                # prune objects that are not JSON/torch‑save friendly (e.g. tensor refs)
+                base_pg.pop("params_flat", None)
 
-            torch.save({"state": full_state, "param_groups": [base_pg]}, output_dir / "optimizer_full.pt")
-            print(f"✓ Fully‑unsharded optimiser state saved to {output_dir/'optimizer_full.pt'}")
+                save_path = output_dir / "optimizer_full.pt"
+                torch.save({"state": full_state, "param_groups": [base_pg]}, save_path)
+                print(f"✓ Fully-unsharded FULL optimiser state saved to {save_path}")
+            elif args.save_exp_avg_sq_only:
+                save_path = output_dir / "exp_avg_sq.safetensors"
+                safetensors.torch.save_file(exp_avg_sq_state, save_path)
+                print(f"✓ Extracted 'exp_avg_sq' tensors saved to {save_path}")
 
     # ---------------------------------------------------------------------
-    # Use trainer.save_model() to trigger checkpoint saving mechanism
-    # This *might* save a consolidated optimizer state directly.
+    # (Optional) Use trainer.save_model() if NOT saving only exp_avg_sq
+    # This saves model, tokenizer, etc. which might be redundant but useful
+    # if the user wants the full state export alongside the optimizer.
     # ---------------------------------------------------------------------
-    print(f"\n--- Attempting to save state using trainer.save_model({output_dir}) ---")
-    try:
-        trainer.save_model(output_dir) 
-        print(f"✓ trainer.save_model() completed. Check contents of {output_dir}")
-        print(f"  Look for 'optimizer.pt' or sharded state inside subdirectories.")
-    except Exception as e:
-        print(f"[ERROR] trainer.save_model() failed: {e}")
-
-    # Optional: Save unwrapped model weights separately if needed, but might be redundant
-    # print("[INFO] Saving unwrapped model weights separately...")
-    # unwrapped_model = trainer.accelerator.unwrap_model(trainer.model)
-    # try:
-    #     unwrapped_model.save_pretrained(output_dir, safe_serialization=False)
-    #     tok_mod["tokenizer"].save_pretrained(output_dir)
-    #     print(f"✓ Unwrapped model and tokenizer saved to {output_dir}")
-    # except Exception as e:
-    #     print(f"[WARN] Could not save unwrapped model/tokenizer separately to {output_dir}: {e}")
+    if not args.save_exp_avg_sq_only:
+        print(f"\n--- Also attempting to save full model/tokenizer state via trainer.save_model({output_dir}) ---")
+        try:
+            trainer.save_model(output_dir)
+            print(f"✓ trainer.save_model() completed. Check contents of {output_dir}")
+            print(f"  Look for model weights, tokenizer, configs, etc.")
+        except Exception as e:
+            print(f"[ERROR] trainer.save_model() failed: {e}")
+    else:
+        print(f"\n-- Skipping trainer.save_model() as --save_exp_avg_sq_only was specified --")
 
     print("\nAll done.")
 

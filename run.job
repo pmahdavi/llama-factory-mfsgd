@@ -1,7 +1,7 @@
 #!/bin/tcsh
-#PBS -l ngpus=1
-#PBS -l ncpus=16
-#PBS -l walltime=04:00:00
+#PBS -l ngpus=4
+#PBS -l ncpus=12
+#PBS -l walltime=00:30:00
 #PBS -q workq@e5-cse-cbgpu01.eecscl.psu.edu
 #PBS -N pt
 #PBS -M pxm5426@psu.edu 
@@ -27,13 +27,14 @@ conda activate llama-factory-env
 #   --checkpoint checkpoint-2000  
 
 
-python scripts/visualize_optim_state.py \
-  --optim_state /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06/export_full_state_checkpoint-1200/optimizer_full.pt \
-  --out_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06/export_full_state_checkpoint-1200/optim_stats
+# python scripts/visualize_optim_state.py \
+#   --optim_state /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06/export_full_state_checkpoint-1200/optimizer_full.pt \
+#   --out_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06/export_full_state_checkpoint-1200/optim_stats
 
 # llamafactory-cli chat configs/tulu3_mix/inference-math-reasoning.yaml
 
 
 # llamafactory-cli train examples/llama3.2_3b_full_sft_open_r1_math_galore.yaml
-
-# python -m torch.distributed.run --nproc_per_node 2 scripts/dump_optim_state.py --run_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_math_reasoning_full_ebs128_lr5e-06 --checkpoint checkpoint-1200
+# python -m torch.distributed.run --nproc_per_node 2 scripts/dump_optim_state.py --run_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_precise_if_full_ebs128_lr1e-05 --checkpoint checkpoint-234
+# python -m torch.distributed.run --nproc_per_node 4 scripts/dump_optim_state.py --run_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_coding_full_ebs128_lr5e-06 --checkpoint checkpoint-1111 --save_exp_avg_sq_only
+python -m torch.distributed.run --nproc_per_node 4 scripts/dump_optim_state_direct_ds.py --run_dir /scratch/pxm5426/runs/lora-exploration/llama-factory/Llama-3.1-8B_tulu3_mixture_coding_full_ebs128_lr5e-06 --checkpoint checkpoint-1111
