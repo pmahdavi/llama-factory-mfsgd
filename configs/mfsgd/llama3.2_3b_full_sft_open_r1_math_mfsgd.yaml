@@ -9,6 +9,8 @@ finetuning_type: full
 
 ### Momentum-Factorized SGD configuration
 use_mfsgd: true      # enable the new optimiser
+learning_rate_mfsgd: 0.00008  # Custom LR for MFSGD parameters
+learning_rate_adamw: 8.0e-5  # Custom LR for embeddings, LM head, non-2D params
 mfsgd_rank: 16
 mfsgd_beta: 0.9
 mfsgd_eta1: 1.0
@@ -39,10 +41,10 @@ report_to: wandb
 ### train
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 128
-learning_rate: 1.0e-3
+learning_rate: 2.0e-5 # Global fallback LR (should be overridden by group LRs)
 num_train_epochs: 2.0
 lr_scheduler_type: cosine
-warmup_ratio: 0.1
+warmup_ratio: 0.0
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null

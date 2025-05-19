@@ -67,8 +67,8 @@ setenv TORCH_DISTRIBUTED_DEBUG DETAIL
 # Set logging level to INFO
 setenv LLAMAFACTORY_VERBOSITY INFO
 
-# Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
-setenv FORCE_TORCHRUN 1
+# # Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
+# setenv FORCE_TORCHRUN 1
 
 echo "Starting training run: {run_name}"
 echo "Using config file: {output_config}"
@@ -115,68 +115,105 @@ def generate_run_name(config_file, ngpus=4):
         with open(config_file, 'r') as f:
             config = yaml.safe_load(f)
         
-        # Extract model name - handle different possible keys
-        model_name = None
-        for key in ['model_name_or_path', 'model_name']:
-            if key in config:
-                model_name = Path(config[key]).name
-                break
-        if not model_name:
-            model_name = "unknown_model"
+        # Extract model name
+        model_name = Path(config.get('model_name_or_path', config.get('model_name', "unknown_model"))).name
             
-        # Extract dataset name - handle different possible keys
-        dataset = None
-        for key in ['dataset_name', 'dataset', 'datasets']:
-            if key in config:
-                dataset_value = config[key]
-                if isinstance(dataset_value, list):
-                    dataset = '_'.join(dataset_value)
-                else:
-                    dataset = dataset_value
-                break
-        if not dataset:
-            dataset = "unknown_dataset"
+        # Extract dataset name
+        dataset_value = config.get('dataset_name', config.get('dataset', config.get('datasets', "unknown_dataset")))
+        if isinstance(dataset_value, list):
+            dataset = '_'.join(dataset_value)
+        else:
+            dataset = str(dataset_value) # Ensure dataset is a string
             
-        # Extract finetuning type
         finetuning_type = config.get('finetuning_type', '')
         
-        # Calculate effective batch size
         bs_per_device = config.get('per_device_train_batch_size', 0)
         gradient_accumulation = config.get('gradient_accumulation_steps', 1)
-        num_gpus = int(ngpus)  # Use the provided ngpus value
+        num_gpus = int(ngpus)
         effective_bs = bs_per_device * gradient_accumulation * num_gpus if bs_per_device else 0
         
-        # Extract learning rate
-        lr = config.get('learning_rate', 0)
-        
-        # Create a clean run name
         components = [model_name, dataset]
-        
         if finetuning_type:
             components.append(finetuning_type)
         
-        # Custom optimiser indicators in run name --------------------------------
-        if config.get('use_galore', False):
-            # Check if fused implementation is enabled (defaults to true)
-            if config.get('galore_fused', True):
-                components.append('galore_fused')
-            else:
-                components.append('galore')
+        lr_component = ""
+        optimizer_specific_tags = []
 
-        # Add MFSGD tag if enabled
         if config.get('use_mfsgd', False):
-            components.append('mfsgd')
+            mfsgd_tag_parts = ["mfsgd"]
+            rank = config.get('mfsgd_rank')
+            if rank is not None:
+                mfsgd_tag_parts.append(f'r{rank}')
+            
+            eps = config.get('mfsgd_eps')
+            if eps is not None:
+                mfsgd_tag_parts.append(f'eps{eps:.0e}'.replace('e-0', 'e-')) # Format like 1e-8
+
+            if config.get('mfsgd_use_ones_for_nonzero_s', False):
+                mfsgd_tag_parts.append('s1')
+            
+            max_val = config.get('mfsgd_max_value')
+            if max_val is not None:
+                mfsgd_tag_parts.append(f'max{max_val:.0e}'.replace('+0','')) # Format like 1e4
+
+            optimizer_specific_tags.append("-".join(mfsgd_tag_parts))
+
+            lr_mfsgd = config.get('learning_rate_mfsgd')
+            lr_adamw = config.get('learning_rate_adamw')
+            mfsgd_lr_str_parts = []
+            if lr_mfsgd is not None:
+                mfsgd_lr_str_parts.append(f'mfLR{lr_mfsgd}')
+            if lr_adamw is not None:
+                mfsgd_lr_str_parts.append(f'admLR{lr_adamw}')
+            
+            if mfsgd_lr_str_parts:
+                lr_component = '_'.join(mfsgd_lr_str_parts)
+            elif config.get('learning_rate') is not None:
+                lr_component = f"lr{config.get('learning_rate')}"
+
+        elif config.get('use_galore', False):
+            galore_tag_parts = []
+            if config.get('galore_fused', True):
+                galore_tag_parts.append('galoreF') # Shorter: F for fused
+            else:
+                galore_tag_parts.append('galore')
+            
+            galore_rank = config.get('galore_rank')
+            if galore_rank is not None:
+                galore_tag_parts.append(f'r{galore_rank}')
+            optimizer_specific_tags.append("-".join(galore_tag_parts))
+            
+            # GaLore specific LRs
+            lr_galore = config.get('galore_lr_galore_params')
+            lr_non_galore = config.get('galore_lr_non_galore_params')
+            galore_lr_str_parts = []
+            if lr_galore is not None:
+                galore_lr_str_parts.append(f'glr{lr_galore}') # e.g., glr1e-4
+            if lr_non_galore is not None:
+                galore_lr_str_parts.append(f'non_glr{lr_non_galore}') # e.g., non_glr5e-6
+            
+            if galore_lr_str_parts:
+                lr_component = '_'.join(galore_lr_str_parts)
+            elif config.get('learning_rate') is not None: # Fallback to global LR if specific GaLore LRs are not set
+                 lr_component = f"lr{config.get('learning_rate')}"
+        
+        else: # Default case (neither MFSGD nor GaLore, or GaLore without specific LRs)
+            if config.get('learning_rate') is not None:
+                lr_component = f"lr{config.get('learning_rate')}"
+
+        if optimizer_specific_tags:
+            components.extend(optimizer_specific_tags)
         
         if effective_bs:
             components.append(f'ebs{effective_bs}')
         
-        if lr:
-            components.append(f'lr{lr}')
+        if lr_component:
+            components.append(lr_component)
         
-        run_name = '_'.join([str(c) for c in components if c])
+        run_name = '_'.join([str(c) for c in components if c and str(c)]) # Ensure c is not empty string before join
         return run_name
     except Exception as e:
-        print(f"Warning: Could not parse config file: {e}", file=sys.stderr)
+        print(f"Warning: Could not parse config file for run name: {e}", file=sys.stderr)
         return f'llama_factory_run_{os.path.basename(config_file).split(".")[0]}'
 
 def create_temp_config_with_output_dir(config_file, run_name, base_output_dir):

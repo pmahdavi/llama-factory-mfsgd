@@ -1,0 +1,59 @@
+### model
+model_name_or_path: meta-llama/Llama-3.1-8B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+# deepspeed: configs/deepspeed/ds_z2_mfsgd_config.json # Using ZeRO Stage 2
+
+### Momentum-Factorized SGD configuration
+use_mfsgd: true
+learning_rate_mfsgd: 1.0e-4  # Custom LR for MFSGD parameters
+learning_rate_adamw: 5.0e-6  # Custom LR for embeddings, LM head, non-2D params
+mfsgd_rank: 4
+mfsgd_beta: 0.9
+mfsgd_eta1: 1.0
+mfsgd_eta2: 0.0 # Keeping eta2 at 0 as per original config
+mfsgd_eps: 1.0e-8
+mfsgd_nesterov: false
+mfsgd_use_current_projection: false
+mfsgd_use_ones_for_nonzero_s: false
+mfsgd_max_value: 10000
+
+### dataset
+dataset: tulu3_mixture_coding
+template: tulu_v3
+cutoff_len: 1024
+# max_samples: 640 # Adjusted for a few more steps (10 steps with eff_batch_size=64)
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/Llama-3.1-8B/mfsgd/sft_coding_custom_lr_test
+logging_steps: 10 # Log every step for quick test
+save_strategy: steps
+save_steps: 500 # Save around mid-training for a 10-step run
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb # Or 'none' if you don't want to log to wandb for a quick test
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 128 # Effective batch size 64
+learning_rate: 5.0e-6 # Global fallback LR (should be overridden by group LRs)
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+eval_strategy: steps
+val_size: 0.01
+per_device_eval_batch_size: 4
+eval_steps: 25 # Eval around mid-training for a 10-step run 

@@ -245,6 +245,14 @@ class GaloreArguments:
         default=False,
         metadata={"help": "Whether or not to enable layer-wise update to further save memory."},
     )
+    galore_lr_galore_params: Optional[float] = field(
+        default=None,
+        metadata={"help": "Learning rate for GaLore-targeted parameters (2D layers). Falls back to global learning_rate if not set."},
+    )
+    galore_lr_non_galore_params: Optional[float] = field(
+        default=None,
+        metadata={"help": "Learning rate for non-GaLore parameters (embeddings, LM head, non-2D, biases, etc.). Falls back to global learning_rate if not set."},
+    )
 
 
 @dataclass
@@ -356,6 +364,16 @@ class MFSGDArguments:
     use_mfsgd: bool = field(
         default=False,
         metadata={"help": "Whether or not to use the MomentumFactorizedSGD optimizer."},
+    )
+
+    learning_rate_mfsgd: Optional[float] = field(
+        default=None,
+        metadata={"help": "Learning rate for parameters optimized by MFSGD (2D layers). Falls back to global learning_rate if not set."},
+    )
+
+    learning_rate_adamw: Optional[float] = field(
+        default=None,
+        metadata={"help": "Learning rate for parameters optimized by AdamW (embeddings, LM head, non-2D params). Falls back to global learning_rate if not set."},
     )
 
     mfsgd_rank: int = field(

@@ -241,21 +241,29 @@ def _create_galore_optimizer(
     else:
         raise NotImplementedError(f"Unknown optim: {training_args.optim}.")
 
+    # Determine learning rates for different groups
+    base_lr = training_args.learning_rate
+    lr_galore_targets = finetuning_args.galore_lr_galore_params if finetuning_args.galore_lr_galore_params is not None else base_lr
+    lr_non_galore_targets = finetuning_args.galore_lr_non_galore_params if finetuning_args.galore_lr_non_galore_params is not None else base_lr
+
     if finetuning_args.galore_layerwise:
         logger.warning_rank0("The displayed gradient norm will be all zeros in layerwise GaLore.")
         if training_args.gradient_accumulation_steps != 1:
             raise ValueError("Per-layer GaLore does not support gradient accumulation.")
 
         optimizer_dict: dict[torch.Tensor, torch.optim.Optimizer] = {}
-        for param in nodecay_params:
-            param_groups = [dict(params=[param], weight_decay=0.0)]
-            optimizer_dict[param] = optim_class(param_groups, **optim_kwargs)
-        for param in decay_params:
-            param_groups = [dict(params=[param], weight_decay=training_args.weight_decay)]
-            optimizer_dict[param] = optim_class(param_groups, **optim_kwargs)
-        for param in galore_params:  # galore params have weight decay
-            param_groups = [dict(params=[param], weight_decay=training_args.weight_decay, **galore_kwargs)]
-            optimizer_dict[param] = optim_class(param_groups, **optim_kwargs)
+        for param in nodecay_params: # Non-GaLore, no decay
+            param_groups_single = [dict(params=[param], weight_decay=0.0, lr=lr_non_galore_targets)]
+            optimizer_dict[param] = optim_class(param_groups_single, **optim_kwargs)
+        for param in decay_params: # Non-GaLore, decay
+            param_groups_single = [dict(params=[param], weight_decay=training_args.weight_decay, lr=lr_non_galore_targets)]
+            optimizer_dict[param] = optim_class(param_groups_single, **optim_kwargs)
+        for param in galore_params:  # GaLore params have weight decay
+            # GaLore specific kwargs + LR for this group
+            current_galore_kwargs_single = dict(galore_kwargs)
+            current_galore_kwargs_single['lr'] = lr_galore_targets
+            param_groups_single = [dict(params=[param], weight_decay=training_args.weight_decay, **current_galore_kwargs_single)]
+            optimizer_dict[param] = optim_class(param_groups_single, **optim_kwargs)
 
         def optimizer_hook(param: "torch.nn.Parameter"):
             if param.grad is not None:
@@ -265,19 +273,31 @@ def _create_galore_optimizer(
         for param in trainable_params:
             param.register_post_accumulate_grad_hook(optimizer_hook)
 
-        optimizer = DummyOptimizer(lr=training_args.learning_rate, optimizer_dict=optimizer_dict)
+        optimizer = DummyOptimizer(lr=base_lr, optimizer_dict=optimizer_dict) # base_lr for DummyOptimizer itself
     else:
-        param_groups = [
-            dict(params=nodecay_params, weight_decay=0.0),
-            dict(params=decay_params, weight_decay=training_args.weight_decay),
-            dict(params=galore_params, weight_decay=training_args.weight_decay, **galore_kwargs),
-        ]
+        param_groups = []
+        if nodecay_params:
+            param_groups.append(dict(params=nodecay_params, weight_decay=0.0, lr=lr_non_galore_targets))
+        if decay_params:
+            param_groups.append(dict(params=decay_params, weight_decay=training_args.weight_decay, lr=lr_non_galore_targets))
+        if galore_params:
+            # GaLore specific kwargs + LR for this group
+            current_galore_kwargs_group = dict(galore_kwargs)
+            current_galore_kwargs_group['lr'] = lr_galore_targets
+            # Assuming GaLore params are also subject to weight_decay defined in training_args
+            param_groups.append(dict(params=galore_params, weight_decay=training_args.weight_decay, **current_galore_kwargs_group))
+        
         optimizer = optim_class(param_groups, **optim_kwargs)
 
     logger.info_rank0(
         f"Using GaLore optimizer with args: {galore_kwargs}. "
         "It may cause hanging at the start of training, wait patiently."
     )
+
+    # Print detailed parameter status for GaLore
+    from ..optimizer.galore_utils import print_galore_parameter_status
+    print_galore_parameter_status(model, optimizer)
+
     return optimizer
 
 
@@ -525,13 +545,99 @@ def _create_mfsgd_optimizer(
     training_args: "TrainingArguments",
     finetuning_args: "FinetuningArguments",
 ) -> "torch.optim.Optimizer":
-    """Instantiate MomentumFactorizedSGD with passed hyperparameters."""
+    """Instantiate MomentumFactorizedSGD with passed hyperparameters and parameter groups."""
 
     from ..optimizer.mfsgd import MomentumFactorizedSGD  # relative import within llamafactory package
 
+    mfsgd_params = []
+    adamw_params = []
+
+    # Identify embedding and LM head parameters (these will use AdamW)
+    excluded_param_ids = set()
+    if hasattr(model, "get_input_embeddings") and model.get_input_embeddings() is not None:
+        excluded_param_ids.add(id(model.get_input_embeddings().weight))
+    if hasattr(model, "get_output_embeddings") and model.get_output_embeddings() is not None:
+        # This handles tied embeddings as well, as it's by id
+        if model.get_output_embeddings().weight is not None: # Check if weight exists
+             excluded_param_ids.add(id(model.get_output_embeddings().weight))
+    
+    # Heuristic for lm_head by name, common in many HF models
+    lm_head_keywords = ["lm_head", "output_projection", "embed_out"]
+
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+
+        is_excluded = id(param) in excluded_param_ids or any(keyword in name for keyword in lm_head_keywords)
+        
+        if not is_excluded and param.dim() == 2:
+            mfsgd_params.append(param)
+        else:
+            adamw_params.append(param)
+
+    param_groups = []
+    
+    # MFSGD parameter group
+    lr_mfsgd = finetuning_args.learning_rate_mfsgd if finetuning_args.learning_rate_mfsgd is not None else training_args.learning_rate
+    if mfsgd_params:
+        param_groups.append(
+            {
+                "params": mfsgd_params,
+                "lr": lr_mfsgd,
+                "is_mfsgd_group": True,
+                # MFSGD specific args for this group (could also be in defaults)
+                "rank": finetuning_args.mfsgd_rank,
+                "beta": finetuning_args.mfsgd_beta,
+                "eta1": finetuning_args.mfsgd_eta1,
+                "eta2": finetuning_args.mfsgd_eta2,
+                "use_current_projection": finetuning_args.mfsgd_use_current_projection,
+                "use_ones_for_nonzero_s": finetuning_args.mfsgd_use_ones_for_nonzero_s,
+                "mfsgd_eps": finetuning_args.mfsgd_eps,
+                "nesterov": finetuning_args.mfsgd_nesterov,
+                "max_value": finetuning_args.mfsgd_max_value,
+                # AdamW specific args for this group (should ideally not be used by MFSGD logic)
+                "adam_betas": (training_args.adam_beta1, training_args.adam_beta2),
+                "adam_eps": training_args.adam_epsilon,
+                "adam_weight_decay": training_args.weight_decay,
+            }
+        )
+        logger.info_rank0(f"MFSGD will be applied to {len(mfsgd_params)} parameter tensors with LR: {lr_mfsgd}.")
+
+    # AdamW parameter group (embeddings, lm_head, non-2D, and 2D explicitly excluded from MFSGD)
+    lr_adamw = finetuning_args.learning_rate_adamw if finetuning_args.learning_rate_adamw is not None else training_args.learning_rate
+    if adamw_params:
+        param_groups.append(
+            {
+                "params": adamw_params,
+                "lr": lr_adamw,
+                "is_mfsgd_group": False,
+                 # MFSGD specific args for this group (will not be used by AdamW logic)
+                "rank": finetuning_args.mfsgd_rank, 
+                "beta": finetuning_args.mfsgd_beta,
+                "eta1": finetuning_args.mfsgd_eta1,
+                "eta2": finetuning_args.mfsgd_eta2,
+                "use_current_projection": finetuning_args.mfsgd_use_current_projection,
+                "use_ones_for_nonzero_s": finetuning_args.mfsgd_use_ones_for_nonzero_s,
+                "mfsgd_eps": finetuning_args.mfsgd_eps,
+                "nesterov": finetuning_args.mfsgd_nesterov,
+                "max_value": finetuning_args.mfsgd_max_value,
+                # AdamW specific args for this group
+                "adam_betas": (training_args.adam_beta1, training_args.adam_beta2),
+                "adam_eps": training_args.adam_epsilon,
+                "adam_weight_decay": training_args.weight_decay,
+            }
+        )
+        logger.info_rank0(f"AdamW will be applied to {len(adamw_params)} parameter tensors with LR: {lr_adamw}.")
+    
+    if not param_groups:
+        raise ValueError("No parameters to optimize. Check model parameter identification for MFSGD.")
+
+    # The top-level lr in constructor is a fallback if a group doesn't have 'lr'.
+    # All other MFSGD/AdamW hyperparams in constructor serve as defaults if not in group.
     optimizer = MomentumFactorizedSGD(
-        model.parameters(),
-        lr=training_args.learning_rate,
+        param_groups, 
+        lr=training_args.learning_rate, # Fallback LR
         rank=finetuning_args.mfsgd_rank,
         beta=finetuning_args.mfsgd_beta,
         eta1=finetuning_args.mfsgd_eta1,
@@ -541,13 +647,17 @@ def _create_mfsgd_optimizer(
         mfsgd_eps=finetuning_args.mfsgd_eps,
         nesterov=finetuning_args.mfsgd_nesterov,
         max_value=finetuning_args.mfsgd_max_value,
-        # AdamW fallback uses global training args for consistency
         adam_betas=(training_args.adam_beta1, training_args.adam_beta2),
         adam_eps=training_args.adam_epsilon,
         adam_weight_decay=training_args.weight_decay,
     )
 
-    logger.info_rank0("Using MomentumFactorizedSGD optimizer.")
+    logger.info_rank0("Using MomentumFactorizedSGD optimizer with distinct parameter groups for MFSGD and AdamW logic.")
+    
+    # Print detailed parameter status
+    from ..optimizer.mfsgd import print_mfsgd_parameter_status
+    print_mfsgd_parameter_status(model, optimizer)
+    
     return optimizer
 
 
