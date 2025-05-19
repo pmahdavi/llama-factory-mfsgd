@@ -67,6 +67,9 @@ setenv TORCH_DISTRIBUTED_DEBUG DETAIL
 # Set logging level to INFO
 setenv LLAMAFACTORY_VERBOSITY INFO
 
+# Set PYTORCH_CUDA_ALLOC_CONF to potentially reduce fragmentation
+setenv PYTORCH_CUDA_ALLOC_CONF expandable_segments:True
+
 # # Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
 # setenv FORCE_TORCHRUN 1
 
