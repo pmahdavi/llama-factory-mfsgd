@@ -539,6 +539,10 @@ class FinetuningArguments(
         default=1000000, # Default to a large number of entries
         metadata={"help": "Maximum number of memory allocation/deallocation events to record for early profiling."}
     )
+    profile_memory_stop_step: Optional[int] = field(
+        default=None,
+        metadata={"help": "If set, dump memory snapshot and stop profiling after this many optimizer steps."}
+    )
 
     def __post_init__(self):
         def split_arg(arg):
