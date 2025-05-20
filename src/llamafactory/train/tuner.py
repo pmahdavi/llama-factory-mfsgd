@@ -74,7 +74,8 @@ def _training_function(config: dict[str, Any]) -> None:
         MemorySnapshotCallback(
             start_recording_manually=memory_profiling_started_by_framework,
             max_entries=finetuning_args.profile_memory_max_entries, # Pass this along
-            profile_memory_stop_step=finetuning_args.profile_memory_stop_step # Pass the new arg
+            profile_memory_stop_step=finetuning_args.profile_memory_stop_step, # Pass the new arg
+            profile_memory_stop_accumulation_step=finetuning_args.profile_memory_stop_accumulation_step # Pass new arg
         )
     )
     if finetuning_args.pissa_convert:

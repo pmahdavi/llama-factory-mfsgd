@@ -29,18 +29,19 @@ class MemorySnapshotCallback(TrainerCallback):
         max_entries: int = 100_000,
         start_recording_manually: bool = False,
         profile_memory_stop_step: Optional[int] = None,
-        finetuning_args: Optional["FinetuningArguments"] = None,
+        profile_memory_stop_accumulation_step: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.max_entries = max_entries
         self.start_recording_manually = start_recording_manually
         self.profile_memory_stop_step = profile_memory_stop_step
-        self.finetuning_args = finetuning_args
+        self.profile_memory_stop_accumulation_step = profile_memory_stop_accumulation_step
         self.enabled = torch.cuda.is_available()
         self.snapshot_path: Optional[str] = None
         self._recording_started = False
         self._atexit_registered = False
         self._early_dump_done = False
+        self._accumulation_count_at_first_step = 0
 
     def _prepare_snapshot_path(self, output_dir: str, step: Optional[int] = None) -> None:
         """Prepares the snapshot path, incorporating step if provided."""
@@ -126,9 +127,27 @@ class MemorySnapshotCallback(TrainerCallback):
         if not self.enabled or not self._recording_started or self._early_dump_done:
             return
 
+        if (
+            self.profile_memory_stop_accumulation_step is not None
+            and state.global_step == 0
+        ):
+            self._accumulation_count_at_first_step += 1
+            logger.info(
+                f"[MemorySnapshotCallback] Accumulation step {self._accumulation_count_at_first_step} "
+                f"at global_step {state.global_step}."
+            )
+            if self._accumulation_count_at_first_step >= self.profile_memory_stop_accumulation_step:
+                logger.info(
+                    f"[MemorySnapshotCallback] Reached target accumulation count "
+                    f"{self._accumulation_count_at_first_step} (limit {self.profile_memory_stop_accumulation_step}) "
+                    f"at global_step {state.global_step}. Dumping snapshot and stopping."
+                )
+                self._do_dump_and_stop(args.output_dir, current_step=state.global_step)
+                return
+
         if self.profile_memory_stop_step is not None and state.global_step >= self.profile_memory_stop_step:
             logger.info(
-                f"[MemorySnapshotCallback] Reached target step {state.global_step} "
+                f"[MemorySnapshotCallback] Reached target optimizer step {state.global_step} "
                 f"(limit {self.profile_memory_stop_step}). Dumping snapshot and stopping."
             )
             self._do_dump_and_stop(args.output_dir, current_step=state.global_step)

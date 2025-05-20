@@ -543,6 +543,10 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "If set, dump memory snapshot and stop profiling after this many optimizer steps."}
     )
+    profile_memory_stop_accumulation_step: Optional[int] = field(
+        default=None,
+        metadata={"help": "If set, dump memory snapshot and stop profiling after this many accumulation steps during the first optimizer step."}
+    )
 
     def __post_init__(self):
         def split_arg(arg):
