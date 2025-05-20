@@ -55,8 +55,27 @@ def _training_function(config: dict[str, Any]) -> None:
     callbacks: list[Any] = config.get("callbacks")
     model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
 
+    # ---- Memory Profiling Hook ----
+    memory_profiling_started_by_framework = False
+    if finetuning_args.profile_memory_from_start and torch.cuda.is_available():
+        # Ensure this runs only on the main process in distributed training
+        # training_args.local_rank == -1 for no DDP, 0 for main DDP process
+        if training_args.local_rank == -1 or training_args.local_rank == 0:
+            print(
+                f"[LlamaFactory] Early CUDA memory profiling enabled. Max entries: "
+                f"{finetuning_args.profile_memory_max_entries}"
+            )
+            torch.cuda.memory._record_memory_history(max_entries=finetuning_args.profile_memory_max_entries)
+            memory_profiling_started_by_framework = True
+    # ---- End Memory Profiling Hook ----
+
     callbacks.append(LogCallback())
-    callbacks.append(MemorySnapshotCallback())
+    callbacks.append(
+        MemorySnapshotCallback(
+            start_recording_manually=memory_profiling_started_by_framework,
+            max_entries=finetuning_args.profile_memory_max_entries # Pass this along
+        )
+    )
     if finetuning_args.pissa_convert:
         callbacks.append(PissaConvertCallback())
 

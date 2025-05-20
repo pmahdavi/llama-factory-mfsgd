@@ -531,6 +531,14 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to compute effective tokens per second."},
     )
+    profile_memory_from_start: bool = field(
+        default=False,
+        metadata={"help": "Whether to start CUDA memory profiling from the very beginning (before model load)."}
+    )
+    profile_memory_max_entries: int = field(
+        default=1000000, # Default to a large number of entries
+        metadata={"help": "Maximum number of memory allocation/deallocation events to record for early profiling."}
+    )
 
     def __post_init__(self):
         def split_arg(arg):

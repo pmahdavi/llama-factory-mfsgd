@@ -15,13 +15,15 @@ galore_rank: 16
 galore_update_interval: 200
 galore_scale: 2.0
 galore_proj_type: std
-galore_fused: true
+galore_fused: false
 galore_layerwise: false
+galore_lr_galore_params: 5.0e-5
+galore_lr_non_galore_params: 5.0e-6
 
 ### dataset
 dataset: tulu3_mixture_coding
 template: tulu_v3
-cutoff_len: 4096
+cutoff_len: 1024
 # max_samples: 1000 # Optional: uncomment and set for quicker testing
 overwrite_cache: true
 preprocessing_num_workers: 16
@@ -38,13 +40,14 @@ save_only_model: false # Kept from GaLore math config
 report_to: wandb
 
 ### train
-per_device_train_batch_size: 2
-gradient_accumulation_steps: 32
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 128
 learning_rate: 1.0e-4 # Common for GaLore, higher than standard AdamW
 num_train_epochs: 1.0
 lr_scheduler_type: cosine
 warmup_ratio: 0.03
 bf16: true
+pure_bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null # Keep null as default
 

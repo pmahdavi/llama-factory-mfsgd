@@ -49,6 +49,14 @@ def _setup_full_tuning(
     for name, param in model.named_parameters():
         if not any(forbidden_module in name for forbidden_module in forbidden_modules):
             if cast_trainable_params_to_fp32:
+                if int(os.getenv("LOCAL_RANK", "0")) == 0: # Log only on rank 0
+                    original_dtype = param.dtype
+                    original_device = param.device
+                    param_size_bytes = param.nelement() * param.element_size()
+                    logger.info(
+                        f"Full tuning: Upcasting parameter '{name}' from {original_dtype} to torch.float32 "
+                        f"on device {original_device}. Size: {param_size_bytes / (1024**2):.2f} MiB"
+                    )
                 param.data = param.data.to(torch.float32)
         else:
             param.requires_grad_(False)
