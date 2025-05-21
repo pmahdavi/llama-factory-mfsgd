@@ -514,6 +514,7 @@ def _create_adam_mini_optimizer(
 def _create_muon_optimizer(
     model: "PreTrainedModel",
     training_args: "TrainingArguments",
+    finetuning_args: "FinetuningArguments",
 ) -> "torch.optim.Optimizer":
     from ..third_party.muon import Muon
 
@@ -530,6 +531,9 @@ def _create_muon_optimizer(
         lr=training_args.learning_rate,
         wd=training_args.weight_decay,
         muon_params=muon_params,
+        momentum=finetuning_args.muon_momentum,
+        nesterov=finetuning_args.muon_nesterov,
+        ns_steps=finetuning_args.muon_ns_steps,
         adamw_params=adamw_params,
         adamw_betas=(training_args.adam_beta1, training_args.adam_beta2),
         adamw_eps=training_args.adam_epsilon,
@@ -682,7 +686,7 @@ def create_custom_optimizer(
         return _create_adam_mini_optimizer(model, training_args)
 
     if finetuning_args.use_muon:
-        return _create_muon_optimizer(model, training_args)
+        return _create_muon_optimizer(model, training_args, finetuning_args)
 
     if finetuning_args.use_mfsgd:
         return _create_mfsgd_optimizer(model, training_args, finetuning_args)

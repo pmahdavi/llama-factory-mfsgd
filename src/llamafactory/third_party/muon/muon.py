@@ -169,19 +169,26 @@ class Muon(torch.optim.Optimizer):
                     continue
                 if g.ndim > 2:
                     g = g.view(g.size(0), -1)
-                assert g is not None
+                # assert g is not None # Original comment, redundant
 
-                # calc update
-                state = self.state[p]
-                if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(g)
-                buf = state["momentum_buffer"]
-                buf.mul_(momentum).add_(g)
-                if group["nesterov"]:
-                    g = g.add(buf, alpha=momentum)
+                # Determine the gradient to pass to Newton-Schulz (g_for_ns)
+                g_for_ns: torch.Tensor
+                if momentum == 0.0: # `momentum` is group["momentum"]
+                    g_for_ns = g # Use current (reshaped) gradient directly
                 else:
-                    g = buf
-                u = zeropower_via_newtonschulz5(g, steps=group["ns_steps"])
+                    state = self.state[p]
+                    if "momentum_buffer" not in state:
+                        state["momentum_buffer"] = torch.zeros_like(g) # Allocate if momentum is non-zero
+                    
+                    buf = state["momentum_buffer"]
+                    buf.mul_(momentum).add_(g) # Update buffer
+
+                    if group["nesterov"]:
+                        g_for_ns = g.add(buf, alpha=momentum)
+                    else:
+                        g_for_ns = buf
+                
+                u = zeropower_via_newtonschulz5(g_for_ns, steps=group["ns_steps"])
 
                 # scale update
                 adjusted_lr = self.adjust_lr_for_muon(lr, p.shape)

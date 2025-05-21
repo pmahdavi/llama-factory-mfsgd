@@ -21,7 +21,7 @@ galore_scale: 2.0
 galore_proj_type: std
 galore_fused: false
 galore_layerwise: false
-galore_lr_galore_params: 1.0e-5
+galore_lr_galore_params: 2.0e-5
 galore_lr_non_galore_params: 5.0e-6
 
 ### dataset

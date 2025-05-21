@@ -423,6 +423,28 @@ class MFSGDArguments:
 
 
 @dataclass
+class MuonArguments:
+    r"""Arguments pertaining to the Muon optimizer."""
+
+    use_muon: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the Muon optimizer."},
+    )
+    muon_momentum: float = field(
+        default=0.95,
+        metadata={"help": "Momentum factor for the internal SGD in Muon."},
+    )
+    muon_nesterov: bool = field(
+        default=True,
+        metadata={"help": "Whether to use Nesterov momentum for the internal SGD in Muon."},
+    )
+    muon_ns_steps: int = field(
+        default=5,
+        metadata={"help": "Number of Newton-Schulz iterations for orthogonalization in Muon."},
+    )
+
+
+@dataclass
 class SwanLabArguments:
     use_swanlab: bool = field(
         default=False,
@@ -469,6 +491,7 @@ class FinetuningArguments(
     ApolloArguments,
     GaloreArguments,
     MFSGDArguments,
+    MuonArguments,
     RLHFArguments,
     LoraArguments,
     FreezeArguments,
@@ -494,10 +517,6 @@ class FinetuningArguments(
     use_adam_mini: bool = field(
         default=False,
         metadata={"help": "Whether or not to use the Adam-mini optimizer."},
-    )
-    use_muon: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to use the Muon optimizer."},
     )
     freeze_vision_tower: bool = field(
         default=True,
@@ -583,9 +602,9 @@ class FinetuningArguments(
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
 
         # Ensure that at most one custom optimizer is enabled
-        _opt_count = int(self.use_galore) + int(self.use_apollo) + int(self.use_badam) + int(self.use_mfsgd)
+        _opt_count = int(self.use_galore) + int(self.use_apollo) + int(self.use_badam) + int(self.use_mfsgd) + int(self.use_muon)
         if _opt_count > 1:
-            raise ValueError("Cannot enable more than one of GaLore, APOLLO, BAdam, or MFSGD optimizers together.")
+            raise ValueError("Cannot enable more than one of GaLore, APOLLO, BAdam, MFSGD, or Muon optimizers together.")
 
         if self.pissa_init and (self.stage in ["ppo", "kto"] or self.use_ref_model):
             raise ValueError("Cannot use PiSSA for current training stage.")

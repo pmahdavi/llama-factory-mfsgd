@@ -1,0 +1,55 @@
+### model
+model_name_or_path: meta-llama/Llama-3.1-8B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+# No custom optimizer flags like use_muon, use_galore, use_mfsgd are set to true.
+# This will make the trainer use the default optimizer specified by `optim`.
+profile_memory_from_start: true
+profile_memory_stop_step: 2
+profile_memory_max_entries: 10000000
+
+### dataset
+dataset: tulu3_mixture_coding
+template: tulu_v3
+cutoff_len: 1024
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/Llama-3.1-8B/adamw_bf16/sft_coding # Updated output directory
+logging_steps: 10
+save_strategy: steps
+save_steps: 600
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 32
+# optim: adamw_torch # Explicitly set, though it's the default
+learning_rate: 5.0e-6 # A common starting LR for full finetuning with AdamW
+weight_decay: 0.01    # A common weight decay for AdamW
+adam_beta1: 0.9
+adam_beta2: 0.999  # Common beta2 for AdamW
+adam_epsilon: 1.0e-8
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true       # Enable bfloat16 mixed-precision
+pure_bf16: false  # Typically false for AdamW, which benefits from fp32 optimizer states.
+                  # If you truly want all ops in bf16, set to true, but monitor stability/performance.
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+eval_strategy: steps
+val_size: 0.01
+per_device_eval_batch_size: 2
+eval_steps: 25 

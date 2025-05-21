@@ -1,0 +1,60 @@
+### model
+model_name_or_path: meta-llama/Llama-3.1-8B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full # Muon applies to 2D params, AdamW to others; effectively full
+# deepspeed: # Commented out, assuming potential incompatibility like GaLore/MFSGD without specific DeepSpeed configs
+profile_memory_from_start: true # From GaLore config, useful for memory profiling
+profile_memory_stop_step: 2   # From GaLore config
+profile_memory_max_entries: 10000000 # From GaLore config
+
+### Muon Optimizer configuration
+use_muon: true
+muon_momentum: 0.0      # Default: 0.95, as specified in MuonArguments
+muon_nesterov: false       # Default: true, as specified in MuonArguments
+muon_ns_steps: 5          # Default: 5, as specified in MuonArguments
+
+### dataset
+dataset: tulu3_mixture_coding
+template: tulu_v3
+cutoff_len: 1024
+# max_samples: 1000 # Optional: uncomment and set for quicker testing
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4 # Keep or adjust based on system capabilities
+
+### output
+output_dir: saves/Llama-3.1-8B/muon/sft_coding # Updated output directory
+logging_steps: 10
+save_strategy: steps
+save_steps: 600
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false # Kept from GaLore math config
+report_to: wandb
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 32
+disable_gradient_checkpointing: false # As per GaLore config, check if Muon has specific needs
+learning_rate: 5.0e-6                # Muon paper suggested LR (0.02)
+weight_decay: 0.1                  # Muon paper suggested WD (0.1)
+adam_beta1: 0.9                    # For AdamW part of Muon (default in TrainingArguments)
+adam_beta2: 0.95                   # For AdamW part of Muon (default in TrainingArguments)
+adam_epsilon: 1.0e-8               # For AdamW part of Muon (default in TrainingArguments)
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+pure_bf16: true # Ensure this is compatible with Muon's bfloat16 usage
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+eval_strategy: steps # Changed from eval_steps to eval_strategy
+val_size: 0.01
+per_device_eval_batch_size: 2
+eval_steps: 25 

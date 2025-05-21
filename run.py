@@ -210,7 +210,38 @@ def generate_run_name(config_file, ngpus=4):
             elif config.get('learning_rate') is not None: # Fallback to global LR if specific GaLore LRs are not set
                  lr_component = f"lr{config.get('learning_rate')}"
         
-        else: # Default case (neither MFSGD nor GaLore, or GaLore without specific LRs)
+        elif config.get('use_muon', False): # Added Muon configuration handling
+            muon_tag_parts = ["muon"]
+            
+            # Add momentum if not default (0.95) or if explicitly set (e.g., 0.0)
+            muon_momentum = config.get('muon_momentum')
+            if muon_momentum is not None:
+                if muon_momentum == 0.0: # Handle explicit 0.0
+                    muon_tag_parts.append('mom0')
+                elif muon_momentum != 0.95:
+                    muon_tag_parts.append(f'mom{muon_momentum}')
+            
+            # Add nesterov if False (default is True)
+            muon_nesterov = config.get('muon_nesterov')
+            if muon_nesterov is False: # Check for explicit False
+                muon_tag_parts.append('noNest')
+            
+            # Add ns_steps if not default (5)
+            muon_ns_steps = config.get('muon_ns_steps')
+            if muon_ns_steps is not None and muon_ns_steps != 5:
+                muon_tag_parts.append(f'ns{muon_ns_steps}')
+            
+            optimizer_specific_tags.append("-".join(muon_tag_parts))
+            
+            # Muon uses the global learning_rate
+            if config.get('learning_rate') is not None:
+                lr_component = f"lr{config.get('learning_rate')}"
+
+        else: # Default case (neither MFSGD, GaLore, nor Muon)
+            # Get the standard optimizer name, default to adamw_torch if not specified
+            optimizer_name = config.get('optim', 'adamw_torch').replace('_torch', '') # e.g. adamw_torch -> adamw
+            optimizer_specific_tags.append(optimizer_name)
+            
             if config.get('learning_rate') is not None:
                 lr_component = f"lr{config.get('learning_rate')}"
 
