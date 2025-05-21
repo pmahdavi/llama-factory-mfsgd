@@ -134,24 +134,22 @@ class MomentumFactorizedSGD(Optimizer):
                         state['U'] = mf_init.U.clone().detach()
                         state['S'] = mf_init.S.clone().detach()
                         state['V'] = mf_init.V.clone().detach()
-                        p.register_hook(self._make_backward_hook(p))
+                        p.register_post_accumulate_grad_hook(self._make_post_accumulate_hook(p))
 
-    def _make_backward_hook(self, p_param): # p renamed to p_param to avoid potential conflict
-        def hook(grad_tensor): # grad renamed to grad_tensor
+    def _make_post_accumulate_hook(self, p_param): # Renamed from _make_backward_hook
+        def hook(param): # Signature changed, grad_tensor removed
+            # grad is now accessed from param.grad
+            grad_tensor = param.grad 
             if grad_tensor is None:
-                # If grad_tensor itself is None, ensure p_param.grad reflects this.
-                # This path might be hit if a previous hook already set it to None,
-                # or if no grad was computed for this param in the first place.
-                p_param.grad = None
                 return None
 
             state = self.state[p_param]
             # Ensure U and V are present
             if 'U' not in state or 'V' not in state:
                 # MFSGD cannot process this parameter's gradient.
-                # Set p_param.grad to None to signal it's handled/consumed from MFSGD's perspective.
-                p_param.grad = None
-                return None # Or, if AdamW fallback is desired and p_param.grad should persist, return grad_tensor
+                # Set .grad to None and return None.
+                param.grad = None
+                return None
 
             U = state['U']
             V = state['V']
@@ -162,7 +160,8 @@ class MomentumFactorizedSGD(Optimizer):
                (grad_tensor.shape[1] != 0 and V.shape[0] != grad_tensor.shape[1]):
                 # Log this potential issue if it's unexpected.
                 # print(f"Skipping MFSGD projection for param due to mismatched dims or empty factors. Grad: {grad_tensor.shape}, U: {U.shape}, V: {V.shape}")
-                p_param.grad = None # Explicitly set grad to None
+                # If we cannot process, set .grad to None and return None.
+                param.grad = None
                 return None
 
             # If grad_tensor is a zero-size tensor (e.g. shape [0, N] or [N, 0]), matmul will fail or produce zeros.
@@ -188,17 +187,15 @@ class MomentumFactorizedSGD(Optimizer):
                     state[key] = torch.zeros_like(proj_tensor)
                 state[key].add_(proj_tensor)
             
-            # Explicitly set the parameter's .grad to None to free memory
-            p_param.grad = None
-            
             # FOR DEBUGGING VISUALIZATION ONLY - controlled by environment variable
             import os
             if os.environ.get("MFSGD_DEBUG_EMPTY_CACHE") == "1":
                 # This is very slow and should only be used for debugging memory visualization.
                 torch.cuda.empty_cache()
 
-            return None # The return value of the hook is now less critical for p_param.grad's state,
-                        # as we've set it directly. Returning None is conventional.
+            # Set the parameter's .grad to None to indicate it has been handled
+            param.grad = None
+            return None
         return hook
 
     @torch.no_grad()

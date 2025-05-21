@@ -6,13 +6,13 @@ trust_remote_code: true
 stage: sft
 do_train: true
 finetuning_type: lora
-lora_rank: 16           # This is the rank r parameter (can be modified as needed)
-lora_alpha: 32          # Default to 2x rank value
+lora_rank: 8           # This is the rank r parameter (can be modified as needed)
+lora_alpha: 16          # Default to 2x rank value
 lora_dropout: 0.05      # Small dropout for regularization
 lora_target: all        # Target all linear layers
 additional_target: embed_tokens,lm_head # Train full embedding and lm_head weights
 profile_memory_from_start: true # Enable early memory profiling
-profile_memory_stop_step: 2     # Dump snapshot after 2 optimizer steps and stop profiling
+profile_memory_stop_step: 4     # Dump snapshot after 2 optimizer steps and stop profiling
 profile_memory_max_entries: 10000000
 
 ### dataset
@@ -34,8 +34,9 @@ save_only_model: false
 report_to: wandb
 
 ### train
-per_device_train_batch_size: 4      # Same batch size as your other configs
-gradient_accumulation_steps: 32     # Same accumulation as your other configs
+per_device_train_batch_size: 1      # Same batch size as your other configs
+gradient_accumulation_steps: 8     # Same accumulation as your other configs
+disable_gradient_checkpointing: true
 learning_rate: 1.0e-5               # Higher learning rate for LoRA (typical for LoRA)
 num_train_epochs: 1.0
 lr_scheduler_type: cosine
