@@ -1,0 +1,52 @@
+### model
+model_name_or_path: meta-llama/Llama-3.1-8B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16           # This is the rank r parameter (can be modified as needed)
+lora_alpha: 32          # Default to 2x rank value
+lora_dropout: 0.05      # Small dropout for regularization
+lora_target: all        # Target all linear layers
+additional_target: embed_tokens,lm_head # Train full embedding and lm_head weights
+profile_memory_from_start: true # Enable early memory profiling
+profile_memory_stop_step: 2     # Dump snapshot after 2 optimizer steps and stop profiling
+profile_memory_max_entries: 10000000
+
+### dataset
+dataset: tulu3_mixture_coding  # Same dataset as your other configs
+template: tulu_v3
+cutoff_len: 1024
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/Llama-3.1-8B/lora/sft_coding_r16
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 4      # Same batch size as your other configs
+gradient_accumulation_steps: 32     # Same accumulation as your other configs
+learning_rate: 5.0e-5               # Higher learning rate for LoRA (typical for LoRA)
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.04                  # Same as your MFSGD config
+bf16: true
+pure_bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+eval_strategy: steps
+val_size: 0.01
+per_device_eval_batch_size: 2
+eval_steps: 25 

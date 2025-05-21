@@ -7,14 +7,14 @@ stage: sft
 do_train: true
 finetuning_type: full
 profile_memory_from_start: true # Enable early memory profiling
-profile_memory_stop_step: 2   # Dump snapshot after 8 optimizer steps and stop profiling
+profile_memory_stop_step: 2   # Dump snapshot after 2 optimizer steps and stop profiling
 profile_memory_max_entries: 10000000
 # profile_memory_stop_accumulation_step: 8 # Dump snapshot after 2 accumulation steps in the first optimizer step
 # deepspeed: configs/deepspeed/ds_z2_mfsgd_config.json # Using ZeRO Stage 2
 
 ### Momentum-Factorized SGD configuration
 use_mfsgd: true
-learning_rate_mfsgd: 1.8e-5  # Custom LR for MFSGD parameters
+learning_rate_mfsgd: 2.5e-5  # Custom LR for MFSGD parameters (matches your latest original)
 learning_rate_adamw: 5.0e-6  # Custom LR for embeddings, LM head, non-2D params
 mfsgd_rank: 16
 mfsgd_beta: 0.9
@@ -30,36 +30,32 @@ mfsgd_max_value: 10000
 dataset: tulu3_mixture_coding
 template: tulu_v3
 cutoff_len: 1024
-# max_samples: 640 # Adjusted for a few more steps (10 steps with eff_batch_size=64)
-overwrite_cache: true
+max_steps: 64 # Run for enough steps to cover 2 optimizer steps (2 * 32 grad_acc_steps)
+overwrite_cache: true # Usually okay for debug runs if dataset preprocessing is stable
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/Llama-3.1-8B/mfsgd/sft_coding_custom_lr_test
-logging_steps: 10 # Log every step for quick test
-save_strategy: steps
-save_steps: 500 # Save around mid-training for a 10-step run
-plot_loss: true
+output_dir: saves/Llama-3.1-8B/mfsgd/sft_coding_debug_empty_cache_phase2 
+logging_steps: 10 
+save_strategy: "no" # No need to save checkpoints for this short debug run
+plot_loss: true # Can be true or false, won't affect memory profile much for short run
 overwrite_output_dir: true
 save_only_model: false
-report_to: wandb # Or 'none' if you don't want to log to wandb for a quick test
+report_to: "none" # Typically set to none for short debug/profiling runs to avoid wandb overhead
 
 ### train
 per_device_train_batch_size: 4
-gradient_accumulation_steps: 32 # Effective batch size 64
+gradient_accumulation_steps: 32 # Effective batch size 128, 2 optimizer steps = 64 actual batches
 disable_gradient_checkpointing: true # Explicitly turn off gradient checkpointing
 learning_rate: 5.0e-6 # Global fallback LR (should be overridden by group LRs)
-num_train_epochs: 1.0
+num_train_epochs: 1.0 # max_steps will override this
 lr_scheduler_type: cosine
-warmup_ratio: 0.04
+warmup_ratio: 0.04 # Matches your latest original
 bf16: true
 pure_bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
 
 ### eval
-eval_strategy: steps
-val_size: 0.01
-per_device_eval_batch_size: 2
-eval_steps: 25 # Eval around mid-training for a 10-step run 
+eval_strategy: "no" # No need to eval for this short debug run 

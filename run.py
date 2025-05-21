@@ -15,7 +15,7 @@ import uuid
 import shutil
 from pathlib import Path
 
-def create_pbs_script(config_file, run_name, walltime, ngpus, ncpus, mem, output_dir, job_name):
+def create_pbs_script(config_file, run_name, walltime, ngpus, ncpus, mem, output_dir, job_name, enable_mfsgd_debug_empty_cache):
     """Create a PBS script with the adaptive run name."""
     # Get the current hostname
     hostname = socket.gethostname()
@@ -69,6 +69,16 @@ setenv LLAMAFACTORY_VERBOSITY INFO
 
 # Set PYTORCH_CUDA_ALLOC_CONF to potentially reduce fragmentation
 setenv PYTORCH_CUDA_ALLOC_CONF expandable_segments:True
+
+# Conditionally set MFSGD_DEBUG_EMPTY_CACHE based on the argument
+if ( "{enable_mfsgd_debug_empty_cache}" == "True" ) then
+    echo "INFO: Enabling MFSGD_DEBUG_EMPTY_CACHE for debug profiling run via command-line arg."
+    setenv MFSGD_DEBUG_EMPTY_CACHE 1
+else
+    if ( $?MFSGD_DEBUG_EMPTY_CACHE ) then
+        unsetenv MFSGD_DEBUG_EMPTY_CACHE
+    endif
+endif
 
 # # Set FORCE_TORCHRUN environment variable (required for DeepSpeed)
 # setenv FORCE_TORCHRUN 1
@@ -282,6 +292,8 @@ def main():
                         help='Keep temporary files after job submission (default: False)')
     parser.add_argument('--job_name', default='llama-factory',
                         help='Name of the job for PBS (default: llama-factory)')
+    parser.add_argument('--enable_mfsgd_debug_empty_cache', action='store_true',
+                        help='Enable MFSGD_DEBUG_EMPTY_CACHE for cache clearing in MFSGD hook (for debug profiling).')
     args = parser.parse_args()
     
     # Generate the run name
@@ -302,7 +314,8 @@ def main():
         args.ncpus, 
         args.mem,
         output_dir,
-        args.job_name
+        args.job_name,
+        args.enable_mfsgd_debug_empty_cache
     )
     temp_script_path = f"temp_llama_factory_{job_id}.job"
     

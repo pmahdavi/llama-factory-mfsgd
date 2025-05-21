@@ -136,39 +136,69 @@ class MomentumFactorizedSGD(Optimizer):
                         state['V'] = mf_init.V.clone().detach()
                         p.register_hook(self._make_backward_hook(p))
 
-    def _make_backward_hook(self, p):
-        def hook(grad):
-            if grad is None:
-                return grad
+    def _make_backward_hook(self, p_param): # p renamed to p_param to avoid potential conflict
+        def hook(grad_tensor): # grad renamed to grad_tensor
+            if grad_tensor is None:
+                # If grad_tensor itself is None, ensure p_param.grad reflects this.
+                # This path might be hit if a previous hook already set it to None,
+                # or if no grad was computed for this param in the first place.
+                p_param.grad = None
+                return None
 
-            state = self.state[p]
-            # Ensure U and V are present, could happen if param was not init for MFSGD
-            # but hook somehow got registered. Or if SVD failed and U,V are not set.
+            state = self.state[p_param]
+            # Ensure U and V are present
             if 'U' not in state or 'V' not in state:
-                return grad # Pass through if no U,V
+                # MFSGD cannot process this parameter's gradient.
+                # Set p_param.grad to None to signal it's handled/consumed from MFSGD's perspective.
+                p_param.grad = None
+                return None # Or, if AdamW fallback is desired and p_param.grad should persist, return grad_tensor
 
             U = state['U']
             V = state['V']
             
             # Ensure U, V are not empty, and grad has compatible dimensions
-            if U.numel() == 0 or V.numel() == 0 or U.shape[0] != grad.shape[0] or V.shape[0] != grad.shape[1]:
-                # This indicates a potential issue or an edge case (e.g. rank 0 factors)
-                # For safety, skip projection if dimensions mismatch or factors are empty.
-                # print(f"Skipping MFSGD projection for param due to mismatched dims or empty factors. Grad: {grad.shape}, U: {U.shape}, V: {V.shape}")
-                grad.zero_() # Still zero out grad as per original logic intention if hook is active
-                return grad
+            if U.numel() == 0 or V.numel() == 0 or \
+               (grad_tensor.shape[0] != 0 and U.shape[0] != grad_tensor.shape[0]) or \
+               (grad_tensor.shape[1] != 0 and V.shape[0] != grad_tensor.shape[1]):
+                # Log this potential issue if it's unexpected.
+                # print(f"Skipping MFSGD projection for param due to mismatched dims or empty factors. Grad: {grad_tensor.shape}, U: {U.shape}, V: {V.shape}")
+                p_param.grad = None # Explicitly set grad to None
+                return None
 
-            gv = torch.matmul(grad, V)
-            gtu = torch.matmul(grad.t(), U)
-            utgv = torch.matmul(U.t(), torch.matmul(grad, V))
+            # If grad_tensor is a zero-size tensor (e.g. shape [0, N] or [N, 0]), matmul will fail or produce zeros.
+            # This can happen in some DDP settings or if a layer isn't used.
+            # Projections will be zero, which is fine.
+            if grad_tensor.numel() == 0:
+                # Create zero tensors for gv, gtu, utgv with correct expected shapes based on U and V
+                # to avoid errors in .add_ if they don't exist in state yet.
+                # This assumes U and V have been initialized correctly even if grad is empty.
+                # The rank `r` is U.shape[1] (or V.shape[1]).
+                r = U.shape[1] if U.numel() > 0 else 0 # Get rank from U
+                gv = torch.zeros(U.shape[0], r, device=U.device, dtype=U.dtype)
+                gtu = torch.zeros(V.shape[0], r, device=V.device, dtype=V.dtype) # V.shape[0] is n
+                utgv = torch.zeros(r, r, device=U.device, dtype=U.dtype)
+            else:
+                gv = torch.matmul(grad_tensor, V)
+                gtu = torch.matmul(grad_tensor.t(), U)
+                utgv = torch.matmul(U.t(), torch.matmul(grad_tensor, V))
+
 
             for key, proj_tensor in [('GV', gv), ('GTU', gtu), ('UTGV', utgv)]:
                 if key not in state:
                     state[key] = torch.zeros_like(proj_tensor)
                 state[key].add_(proj_tensor)
             
-            grad.zero_()
-            return grad
+            # Explicitly set the parameter's .grad to None to free memory
+            p_param.grad = None
+            
+            # FOR DEBUGGING VISUALIZATION ONLY - controlled by environment variable
+            import os
+            if os.environ.get("MFSGD_DEBUG_EMPTY_CACHE") == "1":
+                # This is very slow and should only be used for debugging memory visualization.
+                torch.cuda.empty_cache()
+
+            return None # The return value of the hook is now less critical for p_param.grad's state,
+                        # as we've set it directly. Returning None is conventional.
         return hook
 
     @torch.no_grad()
@@ -248,7 +278,7 @@ class MomentumFactorizedSGD(Optimizer):
                     
                     low_rank_update_term = (U_next * safe_reciprocal_S.unsqueeze(0)) @ V_next.T
 
-                    G_t_for_complement = torch.zeros_like(p.data) # Since p.grad is zeroed by hook
+                    G_t_for_complement = torch.zeros_like(p.data) # Since p.grad is set to None by the hook
                     
                     if eta2 > 0:
                         U_proj_comp, V_proj_comp = (U_next, V_next) if use_current_projection else (U, V)
