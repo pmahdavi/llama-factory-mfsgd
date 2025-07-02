@@ -1,0 +1,3 @@
+[submodule "galore-torch"]
+	path = galore-torch
+	url = https://github.com/pmahdavi/galore-torch

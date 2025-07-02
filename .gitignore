@@ -177,3 +177,8 @@ wandb/
 swanlog/
 generated_predictions.jsonl
 predictions_score.json
+archive/
+configs/ota-merging/
+
+# Cursor-specific files
+.cursor/
