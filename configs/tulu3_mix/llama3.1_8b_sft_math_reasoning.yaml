@@ -19,7 +19,7 @@ preprocessing_num_workers: 12
 output_dir: saves/Llama-3.1-8B/tulu3-sft/math_reasoning
 logging_steps: 10
 save_strategy: steps
-save_steps: 600
+save_steps: 20
 eval_strategy: "no"
   # eval_steps: 500
   # per_device_eval_batch_size: 2

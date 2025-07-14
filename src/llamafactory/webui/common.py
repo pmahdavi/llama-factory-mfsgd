@@ -77,14 +77,19 @@ def load_config() -> dict[str, Union[str, dict[str, Any]]]:
         with open(_get_config_path(), encoding="utf-8") as f:
             return safe_load(f)
     except Exception:
-        return {"lang": None, "last_model": None, "path_dict": {}, "cache_dir": None}
+        return {"lang": None, "hub_name": None, "last_model": None, "path_dict": {}, "cache_dir": None}
 
 
-def save_config(lang: str, model_name: Optional[str] = None, model_path: Optional[str] = None) -> None:
+def save_config(
+    lang: str, hub_name: Optional[str] = None, model_name: Optional[str] = None, model_path: Optional[str] = None
+) -> None:
     r"""Save user config."""
     os.makedirs(DEFAULT_CACHE_DIR, exist_ok=True)
     user_config = load_config()
     user_config["lang"] = lang or user_config["lang"]
+    if hub_name:
+        user_config["hub_name"] = hub_name
+
     if model_name:
         user_config["last_model"] = model_name
 
@@ -163,7 +168,14 @@ def save_args(config_path: str, config_dict: dict[str, Any]) -> None:
 
 def _clean_cmd(args: dict[str, Any]) -> dict[str, Any]:
     r"""Remove args with NoneType or False or empty string value."""
-    no_skip_keys = ["packing"]
+    no_skip_keys = [
+        "packing",
+        "enable_thinking",
+        "use_reentrant_gc",
+        "double_quantization",
+        "freeze_vision_tower",
+        "freeze_multi_modal_projector",
+    ]
     return {k: v for k, v in args.items() if (k in no_skip_keys) or (v is not None and v is not False and v != "")}
 
 
@@ -205,6 +217,14 @@ def load_eval_results(path: os.PathLike) -> str:
     return f"```json\n{result}\n```\n"
 
 
+def calculate_pixels(pixels: str) -> int:
+    r"""Calculate the number of pixels from the expression."""
+    if "*" in pixels:
+        return int(pixels.split("*")[0]) * int(pixels.split("*")[1])
+    else:
+        return int(pixels)
+
+
 def create_ds_config() -> None:
     r"""Create deepspeed config in the current directory."""
     os.makedirs(DEFAULT_CACHE_DIR, exist_ok=True)
@@ -232,7 +252,7 @@ def create_ds_config() -> None:
         "stage": 2,
         "allgather_partitions": True,
         "allgather_bucket_size": 5e8,
-        "overlap_comm": True,
+        "overlap_comm": False,
         "reduce_scatter": True,
         "reduce_bucket_size": 5e8,
         "contiguous_gradients": True,
@@ -247,7 +267,7 @@ def create_ds_config() -> None:
 
     ds_config["zero_optimization"] = {
         "stage": 3,
-        "overlap_comm": True,
+        "overlap_comm": False,
         "contiguous_gradients": True,
         "sub_group_size": 1e9,
         "reduce_bucket_size": "auto",

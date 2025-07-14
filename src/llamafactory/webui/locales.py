@@ -13,6 +13,55 @@
 # limitations under the License.
 
 LOCALES = {
+    "title": {
+        "en": {
+            "value": "<h1><center>🦙🏭LLaMA Factory: Unified Efficient Fine-Tuning of 100+ LLMs</center></h1>",
+        },
+        "ru": {
+            "value": "<h1><center>🦙🏭LLaMA Factory: Унифицированная эффективная тонкая настройка 100+ LLMs</center></h1>",
+        },
+        "zh": {
+            "value": "<h1><center>🦙🏭LLaMA Factory: 一站式大模型高效微调平台</center></h1>",
+        },
+        "ko": {
+            "value": "<h1><center>🦙🏭LLaMA Factory: 100+ LLMs를 위한 통합 효율적인 튜닝</center></h1>",
+        },
+        "ja": {
+            "value": "<h1><center>🦙🏭LLaMA Factory: 100+ LLMs の統合効率的なチューニング</center></h1>",
+        },
+    },
+    "subtitle": {
+        "en": {
+            "value": (
+                "<h3><center>Visit <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
+                "GitHub Page</a></center></h3>"
+            ),
+        },
+        "ru": {
+            "value": (
+                "<h3><center>Посетить <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
+                "страницу GitHub</a></center></h3>"
+            ),
+        },
+        "zh": {
+            "value": (
+                "<h3><center>访问 <a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
+                "GitHub 主页</a></center></h3>"
+            ),
+        },
+        "ko": {
+            "value": (
+                "<h3><center><a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
+                "GitHub 페이지</a>를 방문하세요.</center></h3>"
+            ),
+        },
+        "ja": {
+            "value": (
+                "<h3><center><a href='https://github.com/hiyouga/LLaMA-Factory' target='_blank'>"
+                "GitHub ページ</a>にアクセスする</center></h3>"
+            ),
+        },
+    },
     "lang": {
         "en": {
             "label": "Language",
@@ -72,6 +121,28 @@ LOCALES = {
         "ja": {
             "label": "モデルパス",
             "info": "事前学習済みモデルへのパス、または Hugging Face のモデル識別子。",
+        },
+    },
+    "hub_name": {
+        "en": {
+            "label": "Hub name",
+            "info": "Choose the model download source.",
+        },
+        "ru": {
+            "label": "Имя хаба",
+            "info": "Выберите источник загрузки модели.",
+        },
+        "zh": {
+            "label": "模型下载源",
+            "info": "选择模型下载源。（网络受限环境推荐使用 ModelScope）",
+        },
+        "ko": {
+            "label": "모델 다운로드 소스",
+            "info": "모델 다운로드 소스를 선택하세요.",
+        },
+        "ja": {
+            "label": "モデルダウンロードソース",
+            "info": "モデルをダウンロードするためのソースを選択してください。",
         },
     },
     "finetuning_type": {
@@ -871,6 +942,28 @@ LOCALES = {
             "info": "拡張ブロックのパラメータのみをトレーニングします。",
         },
     },
+    "enable_thinking": {
+        "en": {
+            "label": "Enable thinking",
+            "info": "Whether or not to enable thinking mode for reasoning models.",
+        },
+        "ru": {
+            "label": "Включить мысли",
+            "info": "Включить режим мысли для моделей решающего характера.",
+        },
+        "zh": {
+            "label": "启用思考模式",
+            "info": "是否启用推理模型的思考模式。",
+        },
+        "ko": {
+            "label": "생각 모드 활성화",
+            "info": "추론 모델의 생각 모드를 활성화할지 여부.",
+        },
+        "ja": {
+            "label": "思考モードを有効化",
+            "info": "推論モデルの思考モードを有効にするかどうか。",
+        },
+    },
     "report_to": {
         "en": {
             "label": "Enable external logger",
@@ -1372,6 +1465,177 @@ LOCALES = {
         "ja": {
             "label": "報酬のホワイトニング",
             "info": "PPO トレーニングにおいて報酬スコアをホワイトニング処理します。",
+        },
+    },
+    "mm_tab": {
+        "en": {
+            "label": "Multimodal configurations",
+        },
+        "ru": {
+            "label": "Конфигурации мультимедиа",
+        },
+        "zh": {
+            "label": "多模态参数设置",
+        },
+        "ko": {
+            "label": "멀티모달 구성",
+        },
+        "ja": {
+            "label": "多モーダル設定",
+        },
+    },
+    "freeze_vision_tower": {
+        "en": {
+            "label": "Freeze vision tower",
+            "info": "Freeze the vision tower in the model.",
+        },
+        "ru": {
+            "label": "Заморозить башню визиона",
+            "info": "Заморозить башню визиона в модели.",
+        },
+        "zh": {
+            "label": "冻结视觉编码器",
+            "info": "冻结模型中的视觉编码器。",
+        },
+        "ko": {
+            "label": "비전 타워 고정",
+            "info": "모델의 비전 타워를 고정합니다.",
+        },
+        "ja": {
+            "label": "ビジョンタワーの固定",
+            "info": "モデルのビジョンタワーを固定します。",
+        },
+    },
+    "freeze_multi_modal_projector": {
+        "en": {
+            "label": "Freeze multi-modal projector",
+            "info": "Freeze the multi-modal projector in the model.",
+        },
+        "ru": {
+            "label": "Заморозить мультимодальный проектор",
+            "info": "Заморозить мультимодальный проектор в модели.",
+        },
+        "zh": {
+            "label": "冻结多模态投影器",
+            "info": "冻结模型中的多模态投影器。",
+        },
+        "ko": {
+            "label": "멀티모달 프로젝터 고정",
+            "info": "모델의 멀티모달 프로젝터를 고정합니다.",
+        },
+        "ja": {
+            "label": "多モーダルプロジェクターの固定",
+            "info": "モデルの多モーダルプロジェクターを固定します。",
+        },
+    },
+    "freeze_language_model": {
+        "en": {
+            "label": "Freeze language model",
+            "info": "Freeze the language model in the model.",
+        },
+        "ru": {
+            "label": "Заморозить язык модели",
+            "info": "Заморозить язык модели в модели.",
+        },
+        "zh": {
+            "label": "冻结语言模型",
+            "info": "冻结模型中的语言模型。",
+        },
+        "ko": {
+            "label": "언어 모델 고정",
+            "info": "모델의 언어 모델을 고정합니다.",
+        },
+        "ja": {
+            "label": "言語モデルの固定",
+            "info": "モデルの言語モデルを固定します。",
+        },
+    },
+    "image_max_pixels": {
+        "en": {
+            "label": "Image max pixels",
+            "info": "The maximum number of pixels of image inputs.",
+        },
+        "ru": {
+            "label": "Максимальное количество пикселей изображения",
+            "info": "Максимальное количество пикселей изображения.",
+        },
+        "zh": {
+            "label": "图像最大像素",
+            "info": "输入图像的最大像素数。",
+        },
+        "ko": {
+            "label": "이미지 최대 픽셀",
+            "info": "이미지 입력의 최대 픽셀 수입니다.",
+        },
+        "ja": {
+            "label": "画像最大ピクセル",
+            "info": "画像入力の最大ピクセル数です。",
+        },
+    },
+    "image_min_pixels": {
+        "en": {
+            "label": "Image min pixels",
+            "info": "The minimum number of pixels of image inputs.",
+        },
+        "ru": {
+            "label": "Минимальное количество пикселей изображения",
+            "info": "Минимальное количество пикселей изображения.",
+        },
+        "zh": {
+            "label": "图像最小像素",
+            "info": "输入图像的最小像素数。",
+        },
+        "ko": {
+            "label": "이미지 최소 픽셀",
+            "info": "이미지 입력의 최소 픽셀 수입니다.",
+        },
+        "ja": {
+            "label": "画像最小ピクセル",
+            "info": "画像入力の最小ピクセル数です。",
+        },
+    },
+    "video_max_pixels": {
+        "en": {
+            "label": "Video max pixels",
+            "info": "The maximum number of pixels of video inputs.",
+        },
+        "ru": {
+            "label": "Максимальное количество пикселей видео",
+            "info": "Максимальное количество пикселей видео.",
+        },
+        "zh": {
+            "label": "视频最大像素",
+            "info": "输入视频的最大像素数。",
+        },
+        "ko": {
+            "label": "비디오 최대 픽셀",
+            "info": "비디오 입력의 최대 픽셀 수입니다.",
+        },
+        "ja": {
+            "label": "ビデオ最大ピクセル",
+            "info": "ビデオ入力の最大ピクセル数です。",
+        },
+    },
+    "video_min_pixels": {
+        "en": {
+            "label": "Video min pixels",
+            "info": "The minimum number of pixels of video inputs.",
+        },
+        "ru": {
+            "label": "Минимальное количество пикселей видео",
+            "info": "Минимальное количество пикселей видео.",
+        },
+        "zh": {
+            "label": "视频最小像素",
+            "info": "输入视频的最小像素数。",
+        },
+        "ko": {
+            "label": "비디오 최소 픽셀",
+            "info": "비디오 입력의 최소 픽셀 수입니다.",
+        },
+        "ja": {
+            "label": "ビデオ最小ピクセル",
+            "info": "ビデオ入力の最小ピクセル数です。",
         },
     },
     "galore_tab": {
@@ -2468,23 +2732,6 @@ LOCALES = {
             "label": "HTML タグをエスケープ",
         },
     },
-    "enable_thinking": {
-        "en": {
-            "label": "Enable thinking",
-        },
-        "ru": {
-            "label": "Включить мышление",
-        },
-        "zh": {
-            "label": "启用思考",
-        },
-        "ko": {
-            "label": "사고를 활성화하다",
-        },
-        "ja": {
-            "label": "思考を可能にする",
-        },
-    },
     "clear_btn": {
         "en": {
             "value": "Clear history",
@@ -2671,6 +2918,28 @@ LOCALES = {
         },
         "ja": {
             "value": "エクスポート",
+        },
+    },
+    "device_memory": {
+        "en": {
+            "label": "Device memory",
+            "info": "Current memory usage of the device (GB).",
+        },
+        "ru": {
+            "label": "Память устройства",
+            "info": "Текущая память на устройстве (GB).",
+        },
+        "zh": {
+            "label": "设备显存",
+            "info": "当前设备的显存（GB）。",
+        },
+        "ko": {
+            "label": "디바이스 메모리",
+            "info": "지금 사용 중인 기기 메모리 (GB).",
+        },
+        "ja": {
+            "label": "デバイスメモリ",
+            "info": "現在のデバイスのメモリ（GB）。",
         },
     },
 }
