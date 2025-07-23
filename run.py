@@ -211,7 +211,7 @@ def main():
 
     try:
         # Construct the training command
-        train_command = f"llamafactory-cli train {output_config}"
+        train_command = f"source ~/.tcshrc; conda activate llama-factory-env; llamafactory-cli train {output_config}"
         
         # Execute the training command
         process = subprocess.Popen(train_command, shell=True, executable='/bin/tcsh')
