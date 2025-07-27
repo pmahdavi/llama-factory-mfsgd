@@ -1,0 +1,45 @@
+### model
+model_name_or_path: pmahdavi/Llama-3.1-8B-math-reasoning  # Fine-tuned checkpoint on HF Hub
+trust_remote_code: true
+
+### method
+stage: sft                # Re-use supervised fine-tuning stage logic (just feeds forward)
+finetuning_type: full      # All parameters are considered when accumulating Fisher
+use_fisher: true           # <- Activate the Fisher optimizer we added
+
+do_train: true             # We need a forward/backward pass to collect gradients
+# No actual weight updates will happen because of FisherOptimizer.
+
+deepspeed: examples/deepspeed/ds_z3_config.json  # Keep same ZeRO-3 config for GPU memory sharding
+
+### dataset
+dataset: tulu3_mixture_math_reasoning  # Same dataset used during fine-tuning
+template: tulu_v3
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 12
+
+### output
+output_dir: saves/Llama-3.1-8B/fisher-diag/math_reasoning  # Directory to store optimizer state (FIM)
+logging_steps: 1
+save_strategy: epoch        # Save once at the end; adjust if needed
+save_total_limit: 1         # Keep only the final checkpoint
+plot_loss: true              # Track loss curve like original config
+overwrite_output_dir: true
+report_to: wandb             # Enable wandb logging
+
+### train
+per_device_train_batch_size: 2     # Same as before; tune for GPU memory if needed
+gradient_accumulation_steps: 32
+learning_rate: 0.0                 # lr is ignored by FisherOptimizer but must be valid
+num_train_epochs: 1.0              # One full pass is enough for empirical Fisher
+lr_scheduler_type: constant        # Not used
+bf16: true
+
+ddp_timeout: 180000000
+
+### eval
+# No evaluation during Fisher computation 
+
+### data limit
+max_samples: 1024            # Only process 1024 samples for Fisher accumulation 

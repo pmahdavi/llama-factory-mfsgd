@@ -665,6 +665,19 @@ def _create_mfsgd_optimizer(
     return optimizer
 
 
+def _create_fisher_optimizer(
+    model: "PreTrainedModel",
+    training_args: "TrainingArguments",
+    finetuning_args: "FinetuningArguments",
+) -> "torch.optim.Optimizer":
+    """Return an instance of FisherOptimizer that only accumulates squared gradients."""
+    from ..optimizer.fisher_optimizer import FisherOptimizer
+
+    optimizer = FisherOptimizer(model.parameters())
+    logger.info_rank0("Using FisherOptimizer (diagonal Fisher accumulation, no parameter updates).")
+    return optimizer
+
+
 def create_custom_optimizer(
     model: "PreTrainedModel",
     training_args: "TrainingArguments",
@@ -690,6 +703,9 @@ def create_custom_optimizer(
 
     if finetuning_args.use_mfsgd:
         return _create_mfsgd_optimizer(model, training_args, finetuning_args)
+
+    if getattr(finetuning_args, "use_fisher", False):
+        return _create_fisher_optimizer(model, training_args, finetuning_args)
 
 
 def create_custom_scheduler(

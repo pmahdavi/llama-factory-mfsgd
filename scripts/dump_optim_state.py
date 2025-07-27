@@ -38,6 +38,7 @@ import safetensors.torch  # Added for saving exp_avg_sq
 from transformers import Trainer
 from llamafactory.hparams.parser import get_train_args
 from llamafactory.model import load_model, load_tokenizer
+from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer
 import yaml  # local import to avoid extra dependency if unused elsewhere
 
 # ---------------------------------------------------------------------------
@@ -78,7 +79,15 @@ def main():  # noqa: C901 – keep linear for readability
         action="store_true",
         help="If set, save only the 'exp_avg_sq' tensors to exp_avg_sq.safetensors instead of the full state."
     )
+    parser.add_argument(
+        "--save_fisher_diag_only",
+        action="store_true",
+        help="If set, compute and save only the diagonal Fisher Information Matrix to fisher_diag.safetensors."
+    )
     args = parser.parse_args()
+
+    if args.save_exp_avg_sq_only and args.save_fisher_diag_only:
+        raise ValueError("--save_exp_avg_sq_only and --save_fisher_diag_only are mutually exclusive.")
 
     run_dir: Path = args.run_dir.expanduser().resolve()
     if not run_dir.is_dir():
@@ -151,11 +160,25 @@ def main():  # noqa: C901 – keep linear for readability
 
     dummy_ds = _DummyDS()
 
-    trainer = Trainer(
+    # Determine which custom trainer to use based on the training stage
+    # This is critical for the custom create_optimizer() method to be called.
+    stage = cfg_dict.get("stage", "sft")
+    if stage == "sft":
+        trainer_class = CustomSeq2SeqTrainer
+    else:
+        # Extend this if-elif for other stages like "pt" if needed in the future
+        print(f"[WARN] Stage '{stage}' not explicitly supported, falling back to generic Trainer. "
+              "This may fail if a custom optimizer was used.")
+        trainer_class = Trainer
+
+    trainer = trainer_class(
         model=model,
         args=training_args,
+        finetuning_args=finetuning_args, # Custom trainer expects this
         train_dataset=dummy_ds,
         tokenizer=tok_mod["tokenizer"],
+        processor=None, # Pass dummy processor to satisfy trainer constructor
+        # The optimizers are now handled by the custom trainer's create_optimizer method
     )
 
     # ---------------------------------------------------------------------
@@ -175,20 +198,20 @@ def main():  # noqa: C901 – keep linear for readability
         unwrapped_model = trainer.accelerator.unwrap_model(trainer.model)
 
         full_state: dict[str, dict] | None = {} if trainer.is_world_process_zero() else None
-        exp_avg_sq_state: dict[str, torch.Tensor] | None = {} if trainer.is_world_process_zero() and args.save_exp_avg_sq_only else None
+        extracted_tensors: dict[str, torch.Tensor] | None = {} if trainer.is_world_process_zero() else None
         param_names: list[str] = []
 
         for name, param in unwrapped_model.named_parameters():
             # ensure every rank participates in the collective all‑gather
             opt_entry: dict[str, torch.Tensor | int | float] = {}
-            gathered_exp_avg_sq: torch.Tensor | None = None # To store exp_avg_sq if needed
+            gathered_tensor: torch.Tensor | None = None
 
             # Under ZeRO‑3 the per‑param optimiser tensors live inside the flat group
             group_idx, *_ = ds_opt.grad_position[ds_opt.get_param_id(param)]
             fp32_flat_param = ds_opt.fp32_partitioned_groups_flat[group_idx]
             base_state = ds_opt.optimizer.state[fp32_flat_param]
 
-            if not args.save_exp_avg_sq_only:
+            if not args.save_exp_avg_sq_only and not args.save_fisher_diag_only:
                 # Gather full state for this parameter
                 for key, example_val in base_state.items():
                     is_tensor = torch.is_tensor(example_val)
@@ -210,9 +233,9 @@ def main():  # noqa: C901 – keep linear for readability
                     is_collectable = is_tensor and example_val.dim() > 0 and example_val.numel() > 0
 
                     if is_collectable:
-                        gathered = ds_opt.get_full_hp_param(param, optim_state_key="exp_avg_sq")
+                        gathered_tensor = ds_opt.get_full_hp_param(param, optim_state_key="exp_avg_sq")
                         if trainer.is_world_process_zero():
-                            gathered_exp_avg_sq = gathered.cpu()
+                            extracted_tensors[name] = gathered_tensor.cpu()
                     else:
                         # Should not happen for exp_avg_sq, but handle defensively
                         if trainer.is_world_process_zero():
@@ -222,17 +245,35 @@ def main():  # noqa: C901 – keep linear for readability
                     if trainer.is_world_process_zero():
                         print(f"[WARN] 'exp_avg_sq' not found in optimizer state for param {name}. Skipping.")
                     dist.barrier() # keep ranks in sync
+            
+            elif args.save_fisher_diag_only:
+                # Gather and compute diagonal Fisher
+                if "fisher_sum" in base_state and "sample_count" in base_state:
+                    gathered_fisher_sum = ds_opt.get_full_hp_param(param, optim_state_key="fisher_sum")
+                    sample_count_tensor = base_state["sample_count"]  # Scalar, no gather needed
+
+                    if trainer.is_world_process_zero():
+                        count = sample_count_tensor.item()
+                        if count > 0:
+                            fisher_diag = gathered_fisher_sum.cpu() / count
+                            extracted_tensors[name] = fisher_diag
+                        else:
+                            print(f"[WARN] Sample count is zero for param {name}. Saving zero Fisher diagonal.")
+                            extracted_tensors[name] = torch.zeros_like(gathered_fisher_sum.cpu())
+                else:
+                    if trainer.is_world_process_zero():
+                        print(f"[WARN] 'fisher_sum' or 'sample_count' not found in optimizer state for param {name}. Skipping.")
+                    dist.barrier() # keep ranks in sync
+
 
             if trainer.is_world_process_zero():
-                if not args.save_exp_avg_sq_only:
+                if not args.save_exp_avg_sq_only and not args.save_fisher_diag_only:
                     full_state[name] = opt_entry
-                elif args.save_exp_avg_sq_only and gathered_exp_avg_sq is not None:
-                    exp_avg_sq_state[name] = gathered_exp_avg_sq
                 param_names.append(name)
 
         # Only rank‑0 serialises to disk
         if trainer.is_world_process_zero():
-            if not args.save_exp_avg_sq_only:
+            if not args.save_exp_avg_sq_only and not args.save_fisher_diag_only:
                 # minimal param_group: keep hyper‑params from first group
                 base_pg = ds_opt.optimizer.param_groups[0].copy()
                 base_pg["params"] = param_names
@@ -242,17 +283,23 @@ def main():  # noqa: C901 – keep linear for readability
                 save_path = output_dir / "optimizer_full.pt"
                 torch.save({"state": full_state, "param_groups": [base_pg]}, save_path)
                 print(f"✓ Fully-unsharded FULL optimiser state saved to {save_path}")
+
             elif args.save_exp_avg_sq_only:
                 save_path = output_dir / "exp_avg_sq.safetensors"
-                safetensors.torch.save_file(exp_avg_sq_state, save_path)
+                safetensors.torch.save_file(extracted_tensors, save_path)
                 print(f"✓ Extracted 'exp_avg_sq' tensors saved to {save_path}")
+
+            elif args.save_fisher_diag_only:
+                save_path = output_dir / "fisher_diag.safetensors"
+                safetensors.torch.save_file(extracted_tensors, save_path)
+                print(f"✓ Computed diagonal Fisher matrix saved to {save_path}")
 
     # ---------------------------------------------------------------------
     # (Optional) Use trainer.save_model() if NOT saving only exp_avg_sq
     # This saves model, tokenizer, etc. which might be redundant but useful
     # if the user wants the full state export alongside the optimizer.
     # ---------------------------------------------------------------------
-    if not args.save_exp_avg_sq_only:
+    if not args.save_exp_avg_sq_only and not args.save_fisher_diag_only:
         print(f"\n--- Also attempting to save full model/tokenizer state via trainer.save_model({output_dir}) ---")
         try:
             trainer.save_model(output_dir)
@@ -261,7 +308,7 @@ def main():  # noqa: C901 – keep linear for readability
         except Exception as e:
             print(f"[ERROR] trainer.save_model() failed: {e}")
     else:
-        print(f"\n-- Skipping trainer.save_model() as --save_exp_avg_sq_only was specified --")
+        print(f"\n-- Skipping trainer.save_model() as a specific state extraction was requested --")
 
     print("\nAll done.")
 

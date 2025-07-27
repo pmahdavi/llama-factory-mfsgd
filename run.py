@@ -126,7 +126,13 @@ def generate_run_name(config_file, ngpus=4):
             if config.get('learning_rate') is not None:
                 lr_component = f"lr{config.get('learning_rate')}"
 
-        else: # Default case (neither MFSGD, GaLore, nor Muon)
+        elif config.get('use_fisher', False):
+            optimizer_specific_tags.append("fisher")
+            # Fisher optimizer usually uses lr=0.0, this will correctly format it.
+            if config.get('learning_rate') is not None:
+                lr_component = f"lr{config.get('learning_rate')}"
+
+        else: # Default case (neither MFSGD, GaLore, Muon, nor Fisher)
             # Get the standard optimizer name, default to adamw_torch if not specified
             optimizer_name = config.get('optim', 'adamw_torch').replace('_torch', '') # e.g. adamw_torch -> adamw
             optimizer_specific_tags.append(optimizer_name)

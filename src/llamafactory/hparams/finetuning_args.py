@@ -494,12 +494,23 @@ class SwanLabArguments:
 
 
 @dataclass
+class FisherArguments:
+    r"""Arguments pertaining to the diagonal Fisher accumulation optimizer."""
+
+    use_fisher: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the Fisher diagonal accumulation optimizer."},
+    )
+
+
+@dataclass
 class FinetuningArguments(
     SwanLabArguments,
     BAdamArgument,
     ApolloArguments,
     GaloreArguments,
     MFSGDArguments,
+    FisherArguments,
     MuonArguments,
     RLHFArguments,
     LoraArguments,
@@ -611,7 +622,7 @@ class FinetuningArguments(
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
 
         # Ensure that at most one custom optimizer is enabled
-        _opt_count = int(self.use_galore) + int(self.use_apollo) + int(self.use_badam) + int(self.use_mfsgd) + int(self.use_muon)
+        _opt_count = int(self.use_galore) + int(self.use_apollo) + int(self.use_badam) + int(self.use_mfsgd) + int(self.use_muon) + int(self.use_fisher)
         if _opt_count > 1:
             raise ValueError("Cannot enable more than one of GaLore, APOLLO, BAdam, MFSGD, or Muon optimizers together.")
 
