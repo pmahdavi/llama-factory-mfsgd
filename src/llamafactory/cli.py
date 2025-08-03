@@ -31,6 +31,7 @@ USAGE = (
     + "|   llamafactory-cli webchat -h: launch a chat interface in Web UI   |\n"
     + "|   llamafactory-cli webui: launch LlamaBoard                        |\n"
     + "|   llamafactory-cli version: show version info                      |\n"
+    + "|   llamafactory-cli analyze-logits -h: logit linearity analysis            |\n"
     + "-" * 70
 )
 
@@ -45,6 +46,7 @@ def main():
     from .extras.misc import find_available_port, get_device_count, is_env_enabled, use_ray
     from .train.tuner import export_model, run_exp
     from .webui.interface import run_web_demo, run_web_ui
+    from .analysis.logit_linearity import main as run_logit_linearity
 
     logger = logging.get_logger(__name__)
 
@@ -71,6 +73,7 @@ def main():
         "webui": run_web_ui,
         "version": partial(print, WELCOME),
         "help": partial(print, USAGE),
+        "analyze-logits": run_logit_linearity,
     }
 
     command = sys.argv.pop(1) if len(sys.argv) > 1 else "help"

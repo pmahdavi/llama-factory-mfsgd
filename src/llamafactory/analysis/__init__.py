@@ -1,0 +1,1 @@
+# This package contains analysis utilities such as local logit linearity assessment.

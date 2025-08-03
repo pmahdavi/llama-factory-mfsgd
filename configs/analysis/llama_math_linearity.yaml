@@ -1,0 +1,23 @@
+stage: sft
+# analysis-only; training disabled
+
+model_name_or_path: hf-internal-testing/tiny-random-gpt2
+
+dataset: gsm8k
+split: train
+text_field: question
+
+template: tulu_v3
+cutoff_len: 1024
+max_samples: 64
+
+output_dir: saves/analysis/llama_math_linearity
+overwrite_output_dir: true
+
+analysis:
+  perturbation_std: 0.001
+  num_directions: 8
+  radii: [0.1, 0.3, 1.0]
+  param_scope: full
+  cos_threshold: 0.95
+  relerr_threshold: 0.2
