@@ -716,17 +716,46 @@ def create_custom_scheduler(
     if training_args.lr_scheduler_type == "warmup_stable_decay":
         num_warmup_steps = training_args.get_warmup_steps(num_training_steps)
         remaining_steps = num_training_steps - num_warmup_steps
-        num_stable_steps = remaining_steps // 3  # use 1/3 for stable by default
-        num_decay_steps = remaining_steps - num_stable_steps
+        # check for ratio-based kwargs first
         scheduler_kwargs = training_args.lr_scheduler_kwargs or {}
-        default_kwargs = {
-            "num_stable_steps": num_stable_steps,
-            "num_decay_steps": num_decay_steps,
-        }
-        for key, value in default_kwargs.items():
-            if key not in scheduler_kwargs:
-                scheduler_kwargs[key] = value
-
+        ratio_keys = ("cooldown_ratio", "decay_ratio", "stable_ratio")
+        ratio = None
+        if any(k in scheduler_kwargs for k in ratio_keys):
+            if "stable_ratio" in scheduler_kwargs:
+                try:
+                    stable_ratio = float(scheduler_kwargs.get("stable_ratio", 0.0))
+                except Exception:
+                    stable_ratio = 0.0
+                stable_ratio = min(max(stable_ratio, 0.0), 1.0)
+                ratio = 1.0 - stable_ratio
+            else:
+                try:
+                    ratio = float(scheduler_kwargs.get("cooldown_ratio", scheduler_kwargs.get("decay_ratio", 0.0)))
+                except Exception:
+                    ratio = 0.0
+                ratio = min(max(ratio, 0.0), 1.0)
+        if ratio is not None:
+            num_decay_steps = max(0, int(round(remaining_steps * ratio)))
+            num_stable_steps = max(0, remaining_steps - num_decay_steps)
+            # remove ratio keys to avoid passing unknown args downstream
+            for k in ratio_keys:
+                if k in scheduler_kwargs:
+                    scheduler_kwargs.pop(k)
+            scheduler_kwargs.update({
+                "num_stable_steps": num_stable_steps,
+                "num_decay_steps": num_decay_steps,
+            })
+        else:
+            # default: use 1/3 for stable and the rest for decay
+            num_stable_steps = remaining_steps // 3
+            num_decay_steps = remaining_steps - num_stable_steps
+            default_kwargs = {
+                "num_stable_steps": num_stable_steps,
+                "num_decay_steps": num_decay_steps,
+            }
+            for key, value in default_kwargs.items():
+                if key not in scheduler_kwargs:
+                    scheduler_kwargs[key] = value
         training_args.lr_scheduler_kwargs = scheduler_kwargs
 
     if optimizer is not None and isinstance(optimizer, DummyOptimizer):

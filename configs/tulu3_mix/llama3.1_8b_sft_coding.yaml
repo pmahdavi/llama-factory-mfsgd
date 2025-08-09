@@ -19,10 +19,10 @@ preprocessing_num_workers: 16
 output_dir: saves/Llama-3.1-8B/tulu3-sft/coding
 logging_steps: 10
 save_strategy: steps
-save_steps: 600
-eval_strategy: "no"
-  # eval_steps: 500
-  # per_device_eval_batch_size: 2
+save_steps: 1000
+eval_strategy: steps
+eval_steps: 100
+per_device_eval_batch_size: 2
 plot_loss: true
 overwrite_output_dir: true
 report_to: wandb
@@ -32,10 +32,12 @@ per_device_train_batch_size: 2
 gradient_accumulation_steps: 32
 learning_rate: 5.0e-6
 num_train_epochs: 1.0
-lr_scheduler_type: cosine
-warmup_ratio: 0.03
+lr_scheduler_type: warmup_stable_decay
+warmup_ratio: 0.0
+lr_scheduler_kwargs:
+  cooldown_ratio: 0.4
 bf16: true
 ddp_timeout: 180000000
 
-# ### eval
-# val_size: 0.01 
+### eval
+val_size: 0.01 

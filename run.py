@@ -41,6 +41,7 @@ def generate_run_name(config_file, ngpus=4):
         lr_component = ""
         optimizer_specific_tags = []
 
+        # Optimizer-specific tags (existing logic)
         if config.get('use_mfsgd', False):
             mfsgd_tag_parts = ["mfsgd"]
             rank = config.get('mfsgd_rank')
@@ -148,6 +149,36 @@ def generate_run_name(config_file, ngpus=4):
         
         if lr_component:
             components.append(lr_component)
+
+        # Append LR scheduler info (type + key kwargs)
+        lr_sched_type = config.get('lr_scheduler_type')
+        if lr_sched_type:
+            # Short aliases for common schedulers
+            sched_alias_map = {
+                'warmup_stable_decay': 'wsd',
+                'cosine': 'cos',
+                'linear': 'lin',
+                'constant': 'const',
+                'constant_with_warmup': 'cww',
+                'polynomial': 'poly',
+                'inverse_sqrt': 'isq',
+            }
+            alias = sched_alias_map.get(str(lr_sched_type), str(lr_sched_type))
+            sched_parts = [alias]
+            kwargs = config.get('lr_scheduler_kwargs', {}) or {}
+            # Prefer ratio-style keys; else include step split
+            if 'cooldown_ratio' in kwargs:
+                sched_parts.append(f'cr{kwargs["cooldown_ratio"]}')
+            elif 'decay_ratio' in kwargs:
+                sched_parts.append(f'dr{kwargs["decay_ratio"]}')
+            elif 'stable_ratio' in kwargs:
+                sched_parts.append(f'sr{kwargs["stable_ratio"]}')
+            else:
+                ns = kwargs.get('num_stable_steps')
+                nd = kwargs.get('num_decay_steps')
+                if ns is not None and nd is not None:
+                    sched_parts.append(f's{ns}d{nd}')
+            components.append('-'.join(sched_parts))
         
         run_name = '_'.join([str(c) for c in components if c and str(c)]) # Ensure c is not empty string before join
         return run_name
